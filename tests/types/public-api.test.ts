@@ -1,4 +1,4 @@
-import { componentsToDebugString, createClient, createCollector, hashComponents, loadClient, type IdentifyResult } from '@fingerprint-framework/core';
+import { componentsToDebugString, createBotDetectionCollector, createClient, createCollector, createPrivacyModeCollector, hashComponents, loadClient, type IdentifyResult } from '@fingerprint-framework/core';
 import { createBrowserCollectorPack, createDefaultCollectors, createNavigatorPropertiesCollector } from '@fingerprint-framework/core/collectors';
 import { createPolicy } from '@fingerprint-framework/core/policy';
 import { createMemoryStorage } from '@fingerprint-framework/core/storage';
@@ -15,6 +15,8 @@ const collector = createCollector({
 });
 
 const navigatorCollector = createNavigatorPropertiesCollector();
+const botCollector = createBotDetectionCollector();
+const privacyCollector = createPrivacyModeCollector();
 
 const latencyCollector = createCollector({
   id: 'types.latency',
@@ -26,7 +28,7 @@ const latencyCollector = createCollector({
 
 const client = createClient({
   namespace: 'types',
-  collectors: [collector, navigatorCollector, latencyCollector, ...createBrowserCollectorPack(), ...createDefaultCollectors()],
+  collectors: [collector, navigatorCollector, botCollector, privacyCollector, latencyCollector, ...createBrowserCollectorPack(), ...createDefaultCollectors()],
   policy: { redactValues: true },
   storage: createMemoryStorage()
 });

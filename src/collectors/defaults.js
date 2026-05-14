@@ -6,6 +6,7 @@ import {
   createPrivateClickMeasurementCollector,
   createVendorFlavorsCollector
 } from './browser-features.js';
+import { createBotDetectionCollector } from './bot-detection.js';
 import { createMediaPreferencesCollector, createScreenCollector, createScreenFrameCollector } from './display.js';
 import { createFontPreferencesCollector, createFontsCollector } from './fonts.js';
 import { createCanvasCollector, createWebglCollector, createWebglExtensionsCollector } from './graphics.js';
@@ -13,6 +14,7 @@ import { createArchitectureCollector, createHardwareCollector, createTouchSuppor
 import { createDateTimeLocaleCollector, createLocaleCollector, createTimezoneCollector } from './locale.js';
 import { createMathCollector } from './math.js';
 import { createAudioBaseLatencyCollector, createAudioCollector } from './media.js';
+import { createPrivacyModeCollector } from './privacy-mode.js';
 import { createBrowserRuntimeCollector, createClientHintsCollector, createNavigatorPropertiesCollector, createNodeRuntimeCollector } from './runtime.js';
 import { createStorageCapabilitiesCollector } from './storage-signals.js';
 
@@ -32,6 +34,8 @@ export function createDefaultCollectors() {
     createTouchSupportCollector(),
     createArchitectureCollector(),
     createStorageCapabilitiesCollector(),
+    createBotDetectionCollector(),
+    createPrivacyModeCollector(),
     createPluginsCollector(),
     createVendorFlavorsCollector(),
     createPdfViewerCollector(),

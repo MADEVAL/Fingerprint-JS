@@ -186,6 +186,8 @@ Minimum set:
 - `hardware.touch`: touch event and pointer media-query support;
 - `hardware.architecture`: typed-array architecture byte pattern;
 - `storage.capabilities`: cookies, IndexedDB, localStorage/sessionStorage, openDatabase, Do Not Track;
+- `browser.botDetection`: automation and headless-browser evidence with scored verdicts;
+- `browser.privacyMode`: conservative private-mode likelihood from storage, IndexedDB, quota, and persistence indicators;
 - `browser.plugins`: plugins and MIME types;
 - `browser.vendorFlavors`: browser-specific global markers;
 - `browser.pdfViewer`: native PDF viewer flag;
@@ -202,6 +204,10 @@ Minimum set:
 - `math.fingerprint`: deterministic JavaScript math behavior.
 
 Collectors that touch layout, graphics, audio, or blocker baits are marked active and are disabled unless the policy allows active collection.
+
+Private-mode detection is explicitly best-effort. Current browser vendors intentionally avoid exposing a universal incognito/private browsing flag. The framework therefore reports `likely_private`, `possible_private`, `no_private_evidence`, or `unsupported` with evidence, score, and confidence instead of returning a misleading boolean.
+
+Bot detection is evidence-based. Strong signals such as `navigator.webdriver`, known automation globals, and headless user agents dominate the score. Weak signals such as empty plugin/language surfaces or impossible window dimensions only contribute to suspicion and should be interpreted with product context.
 
 ## 7. Public Result Shape
 

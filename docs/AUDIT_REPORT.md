@@ -24,7 +24,7 @@ This audit covers the current repository state: package metadata, source runtime
 - Storage is disabled by default and scoped by namespace when enabled.
 - The standalone browser build is smoke-tested through a restricted VM context.
 - Source files are split by responsibility while published builds remain bundled for package and script-tag usage.
-- Built-in collectors now cover substantially more browser entropy: client hints, navigator properties, screen frame, media preferences, touch, architecture, storage capabilities, plugins, vendor flavors, PDF viewer, Apple Pay, Private Click Measurement, DOM blockers, fonts, audio latency, audio fingerprinting, WebGL extensions, canvas, and math behavior.
+- Built-in collectors now cover substantially more browser entropy and risk evidence: client hints, navigator properties, bot detection, private-mode indicators, screen frame, media preferences, touch, architecture, storage capabilities, plugins, vendor flavors, PDF viewer, Apple Pay, Private Click Measurement, DOM blockers, fonts, audio latency, audio fingerprinting, WebGL extensions, canvas, and math behavior.
 - Known unstable browser paths are handled through a dedicated quirk layer before collecting audio, canvas, screen metrics, screen frame, and hardware concurrency signals.
 - `loadClient()`, `prepare()`, `get()`, `hashComponents()`, `client.debug()`, and `componentsToDebugString()` provide a more mature integration and diagnostics flow.
 - Collector preparation now preloads allowed sources, reuses prepared values, and respects consent requirements when configured.
@@ -45,6 +45,8 @@ This audit covers the current repository state: package metadata, source runtime
 - Added a collector preparation lifecycle with active-source ordering.
 - Added public `hashComponents()` for product-side component filtering and ID recalculation.
 - Added navigator property and audio base latency collectors.
+- Added `browser.botDetection` with scored automation evidence.
+- Added `browser.privacyMode` with conservative private-mode likelihood indicators.
 - Added iframe-isolated font measurement and expanded DOM blocker baits.
 - Added `docs/VERSION_POLICY.md` for visitor identifier compatibility expectations.
 - Raised the bundle size budget from 30 KB to 45 KB after expanding the built-in collector pack.
@@ -54,3 +56,4 @@ This audit covers the current repository state: package metadata, source runtime
 1. Keep the 45 KB bundle budget under review as collectors are added.
 2. Add release automation only when publishing credentials and release policy are defined.
 3. Expand real-browser tests with product-specific integration fixtures when those flows exist.
+4. Calibrate bot and private-mode scoring against production traffic before using verdicts for automated enforcement.

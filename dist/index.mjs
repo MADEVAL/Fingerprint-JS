@@ -137,6 +137,106 @@ function getMatchMedia(context) {
   return typeof windowRef.matchMedia === "function" ? windowRef.matchMedia.bind(windowRef) : null;
 }
 
+// src/collectors/bot-detection.js
+var AUTOMATION_GLOBALS = Object.freeze([
+  "__driver_evaluate",
+  "__driver_unwrapped",
+  "__fxdriver_evaluate",
+  "__fxdriver_unwrapped",
+  "__nightmare",
+  "__playwright__binding__",
+  "__pwInitScripts",
+  "__selenium_evaluate",
+  "__selenium_unwrapped",
+  "__webdriver_evaluate",
+  "__webdriver_script_fn",
+  "__webdriver_script_func",
+  "__webdriver_script_function",
+  "__webdriver_unwrapped",
+  "_phantom",
+  "_Selenium_IDE_Recorder",
+  "callPhantom",
+  "calledSelenium",
+  "callSelenium",
+  "domAutomation",
+  "domAutomationController",
+  "phantom"
+]);
+var HEADLESS_UA_PATTERN = /HeadlessChrome|PhantomJS|SlimerJS|puppeteer|playwright/u;
+function createBotDetectionCollector() {
+  return createCollector({
+    id: "browser.botDetection",
+    version: "1",
+    category: "automation",
+    sensitivity: "medium",
+    mode: "passive",
+    stability: "stable",
+    weight: 0.95,
+    collect(context) {
+      const navigatorRef = context.navigator;
+      const windowRef = getWindowRef(context);
+      const userAgent = safeString(navigatorRef && navigatorRef.userAgent) || "";
+      const plugins = navigatorRef ? toArrayLike(navigatorRef.plugins) : [];
+      const mimeTypes = navigatorRef ? toArrayLike(navigatorRef.mimeTypes) : [];
+      const languages = normalizeLanguages(navigatorRef && navigatorRef.languages);
+      const automationGlobals = AUTOMATION_GLOBALS.filter((property) => property in windowRef).sort();
+      const checks = [
+        createCheck("navigator.webdriver", navigatorRef && navigatorRef.webdriver === true, 0.45, null),
+        createCheck("automation.globals", automationGlobals.length > 0, 0.35, automationGlobals),
+        createCheck("headless.userAgent", HEADLESS_UA_PATTERN.test(userAgent), 0.3, userAgent || null),
+        createCheck("empty.languages", Boolean(navigatorRef && safeString(navigatorRef.language) && languages.length === 0), 0.1, null),
+        createCheck("zero.outer.window", hasZeroOuterWindow(windowRef), 0.12, readWindowSize(windowRef)),
+        createCheck("empty.chrome.plugins", isChromeLike(userAgent) && plugins.length === 0 && mimeTypes.length === 0, 0.08, null)
+      ];
+      const score = roundScore(checks.reduce((total, check) => total + (check.matched ? check.weight : 0), 0));
+      const evidence = checks.filter((check) => check.matched).map((check) => check.name);
+      const verdict = score >= 0.6 ? "bot" : score >= 0.25 ? "suspicious" : "likely_human";
+      return createAssessment(verdict, score, evidence, checks);
+    }
+  });
+}
+function createAssessment(verdict, score, evidence, checks) {
+  return {
+    verdict,
+    score,
+    confidence: score >= 0.6 ? "high" : score >= 0.25 ? "medium" : evidence.length > 0 ? "low" : "none",
+    evidence,
+    checks
+  };
+}
+function createCheck(name, matched, weight, detail) {
+  return {
+    name,
+    matched: Boolean(matched),
+    weight,
+    detail
+  };
+}
+function normalizeLanguages(languages) {
+  return Array.isArray(languages) ? languages.filter((language) => typeof language === "string" && language.length > 0) : [];
+}
+function hasZeroOuterWindow(windowRef) {
+  const outerWidth = safeNumber(windowRef.outerWidth);
+  const outerHeight = safeNumber(windowRef.outerHeight);
+  const innerWidth = safeNumber(windowRef.innerWidth);
+  const innerHeight = safeNumber(windowRef.innerHeight);
+  return outerWidth === 0 && outerHeight === 0 && (Number(innerWidth) > 0 || Number(innerHeight) > 0);
+}
+function readWindowSize(windowRef) {
+  return {
+    outerWidth: safeNumber(windowRef.outerWidth),
+    outerHeight: safeNumber(windowRef.outerHeight),
+    innerWidth: safeNumber(windowRef.innerWidth),
+    innerHeight: safeNumber(windowRef.innerHeight)
+  };
+}
+function isChromeLike(userAgent) {
+  return /Chrome|Chromium|CriOS|Edg/u.test(userAgent) && !/Firefox|FxiOS/u.test(userAgent);
+}
+function roundScore(value) {
+  return Math.round(Math.min(1, value) * 1e3) / 1e3;
+}
+
 // src/collectors/browser-features.js
 var VENDOR_GLOBALS = Object.freeze([
   ["chrome", "chrome"],
@@ -1299,6 +1399,17 @@ function checksumSamples(samples) {
   return checksumString(summary);
 }
 
+// src/errors.js
+function normalizeError(error) {
+  if (!error) {
+    return Object.freeze({ code: "unknown", message: "Unknown error" });
+  }
+  return Object.freeze({
+    code: error.code || error.name || "error",
+    message: error.message || String(error)
+  });
+}
+
 // src/environment.js
 function getGlobal() {
   return globalThis;
@@ -1318,6 +1429,217 @@ function clamp(value, min, max) {
 function round(value, decimals) {
   const factor = 10 ** decimals;
   return Math.round(value * factor) / factor;
+}
+
+// src/storage.js
+function resolveStorage(storageOption, namespace) {
+  if (!storageOption) {
+    return null;
+  }
+  if (storageOption === "local") {
+    const globalRef = getGlobal();
+    if (!canUseStorage(globalRef, "localStorage")) {
+      return null;
+    }
+    return Object.freeze({
+      type: "localStorage",
+      async get(key) {
+        return globalRef.localStorage.getItem(key);
+      },
+      async set(key, value) {
+        globalRef.localStorage.setItem(key, value);
+      }
+    });
+  }
+  if (storageOption && typeof storageOption.get === "function" && typeof storageOption.set === "function") {
+    return Object.freeze({
+      type: storageOption.type || `custom:${namespace}`,
+      get: storageOption.get.bind(storageOption),
+      set: storageOption.set.bind(storageOption)
+    });
+  }
+  throw new TypeError('storage must be false, "local", or an object with get/set methods.');
+}
+async function updateStorageState(storage, key, visitorId, createdAt) {
+  if (!storage || !visitorId) {
+    return Object.freeze({ enabled: Boolean(storage), status: visitorId ? "disabled" : "skipped" });
+  }
+  try {
+    const previousRaw = await storage.get(key);
+    const previous = previousRaw ? JSON.parse(previousRaw) : null;
+    const next = {
+      visitorId,
+      firstSeenAt: previous && previous.visitorId === visitorId ? previous.firstSeenAt : createdAt,
+      lastSeenAt: createdAt,
+      seenCount: previous && previous.visitorId === visitorId ? Number(previous.seenCount || 0) + 1 : 1
+    };
+    await storage.set(key, JSON.stringify(next));
+    return Object.freeze({
+      enabled: true,
+      type: storage.type,
+      status: previous && previous.visitorId === visitorId ? "updated" : "created",
+      firstSeenAt: next.firstSeenAt,
+      seenCount: next.seenCount
+    });
+  } catch (error) {
+    return Object.freeze({
+      enabled: true,
+      type: storage.type,
+      status: "error",
+      error: normalizeError(error)
+    });
+  }
+}
+function canUseStorage(globalRef, key) {
+  try {
+    const storage = globalRef && globalRef[key];
+    if (!storage || typeof storage.setItem !== "function" || typeof storage.removeItem !== "function") {
+      return false;
+    }
+    const testKey = "__fingerprint_framework_test__";
+    storage.setItem(testKey, "1");
+    storage.removeItem(testKey);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+// src/collectors/privacy-mode.js
+var LOW_QUOTA_BYTES = 120 * 1024 * 1024;
+function createPrivacyModeCollector() {
+  return createCollector({
+    id: "browser.privacyMode",
+    version: "1",
+    category: "privacy",
+    sensitivity: "medium",
+    mode: "active",
+    stability: "volatile",
+    weight: 0.85,
+    async collect(context) {
+      const globalRef = context.global || {};
+      const navigatorRef = context.navigator || {};
+      if (isNodeLikeRuntime(globalRef, context.document)) {
+        return createResult("unsupported", 0, [], [], "Private-mode indicators are browser-only.");
+      }
+      const storageRef = navigatorRef.storage || null;
+      const localStorage = probeWebStorage(globalRef, "localStorage", 0.2);
+      const sessionStorage = probeWebStorage(globalRef, "sessionStorage", 0.15);
+      const indexedDB = await probeIndexedDb(globalRef);
+      const estimate = await probeStorageEstimate(storageRef);
+      const persisted = await probePersistedStorage(storageRef);
+      const checks = [
+        localStorage,
+        sessionStorage,
+        createCheck2("indexedDB.blocked", indexedDB.blocked, 0.25, indexedDB.detail),
+        createCheck2("storage.lowQuota", estimate.lowQuota, 0.2, estimate.detail),
+        createCheck2("storage.notPersisted", persisted.notPersisted, 0.05, persisted.detail)
+      ];
+      const score = roundScore2(checks.reduce((total, check) => total + (check.matched ? check.weight : 0), 0));
+      const evidence = checks.filter((check) => check.matched).map((check) => check.name);
+      return createResult(
+        score >= 0.5 ? "likely_private" : score >= 0.25 ? "possible_private" : "no_private_evidence",
+        score,
+        evidence,
+        checks,
+        "No browser exposes a universal private-mode flag; this component reports conservative indicators only."
+      );
+    }
+  });
+}
+function createResult(verdict, score, evidence, checks, note) {
+  return {
+    verdict,
+    score,
+    confidence: score >= 0.5 ? "medium" : score >= 0.25 ? "low" : "none",
+    evidence,
+    checks,
+    note
+  };
+}
+function isNodeLikeRuntime(globalRef, documentRef) {
+  return Boolean(!documentRef && globalRef && globalRef.process && globalRef.process.versions && globalRef.process.versions.node);
+}
+function probeWebStorage(globalRef, key, weight) {
+  return createCheck2(`${key}.blocked`, !canUseStorage(globalRef, key), weight, null);
+}
+function probeIndexedDb(globalRef) {
+  const indexedDB = globalRef && globalRef.indexedDB;
+  if (!indexedDB || typeof indexedDB.open !== "function") {
+    return Promise.resolve({ blocked: true, detail: "missing" });
+  }
+  try {
+    const request = indexedDB.open("__fingerprint_framework_privacy_probe__", 1);
+    if (!request || typeof request !== "object") {
+      return Promise.resolve({ blocked: false, detail: "unknown" });
+    }
+    return new Promise((resolve) => {
+      let finished = false;
+      const finish = (blocked, detail) => {
+        if (finished) {
+          return;
+        }
+        finished = true;
+        resolve({ blocked, detail });
+      };
+      request.onerror = () => finish(true, "error");
+      request.onblocked = () => finish(true, "blocked");
+      request.onsuccess = () => {
+        closeDatabase(request.result);
+        deleteDatabase(indexedDB);
+        finish(false, "available");
+      };
+    });
+  } catch (_error) {
+    return Promise.resolve({ blocked: true, detail: "exception" });
+  }
+}
+async function probeStorageEstimate(storageRef) {
+  if (!storageRef || typeof storageRef.estimate !== "function") {
+    return { lowQuota: false, detail: null };
+  }
+  try {
+    const estimate = await storageRef.estimate();
+    const quota = safeNumber(estimate && estimate.quota);
+    return {
+      lowQuota: quota !== null && quota > 0 && quota < LOW_QUOTA_BYTES,
+      detail: { quota, usage: safeNumber(estimate && estimate.usage) }
+    };
+  } catch (_error) {
+    return { lowQuota: false, detail: "unavailable" };
+  }
+}
+async function probePersistedStorage(storageRef) {
+  if (!storageRef || typeof storageRef.persisted !== "function") {
+    return { notPersisted: false, detail: null };
+  }
+  try {
+    const persisted = await storageRef.persisted();
+    return { notPersisted: persisted === false, detail: Boolean(persisted) };
+  } catch (_error) {
+    return { notPersisted: false, detail: "unavailable" };
+  }
+}
+function createCheck2(name, matched, weight, detail) {
+  return {
+    name,
+    matched: Boolean(matched),
+    weight,
+    detail
+  };
+}
+function closeDatabase(database) {
+  if (database && typeof database.close === "function") {
+    database.close();
+  }
+}
+function deleteDatabase(indexedDB) {
+  if (typeof indexedDB.deleteDatabase === "function") {
+    indexedDB.deleteDatabase("__fingerprint_framework_privacy_probe__");
+  }
+}
+function roundScore2(value) {
+  return Math.round(Math.min(1, value) * 1e3) / 1e3;
 }
 
 // src/collectors/runtime.js
@@ -1459,91 +1781,6 @@ function normalizeHighEntropy(value) {
   };
 }
 
-// src/errors.js
-function normalizeError(error) {
-  if (!error) {
-    return Object.freeze({ code: "unknown", message: "Unknown error" });
-  }
-  return Object.freeze({
-    code: error.code || error.name || "error",
-    message: error.message || String(error)
-  });
-}
-
-// src/storage.js
-function resolveStorage(storageOption, namespace) {
-  if (!storageOption) {
-    return null;
-  }
-  if (storageOption === "local") {
-    const globalRef = getGlobal();
-    if (!canUseStorage(globalRef, "localStorage")) {
-      return null;
-    }
-    return Object.freeze({
-      type: "localStorage",
-      async get(key) {
-        return globalRef.localStorage.getItem(key);
-      },
-      async set(key, value) {
-        globalRef.localStorage.setItem(key, value);
-      }
-    });
-  }
-  if (storageOption && typeof storageOption.get === "function" && typeof storageOption.set === "function") {
-    return Object.freeze({
-      type: storageOption.type || `custom:${namespace}`,
-      get: storageOption.get.bind(storageOption),
-      set: storageOption.set.bind(storageOption)
-    });
-  }
-  throw new TypeError('storage must be false, "local", or an object with get/set methods.');
-}
-async function updateStorageState(storage, key, visitorId, createdAt) {
-  if (!storage || !visitorId) {
-    return Object.freeze({ enabled: Boolean(storage), status: visitorId ? "disabled" : "skipped" });
-  }
-  try {
-    const previousRaw = await storage.get(key);
-    const previous = previousRaw ? JSON.parse(previousRaw) : null;
-    const next = {
-      visitorId,
-      firstSeenAt: previous && previous.visitorId === visitorId ? previous.firstSeenAt : createdAt,
-      lastSeenAt: createdAt,
-      seenCount: previous && previous.visitorId === visitorId ? Number(previous.seenCount || 0) + 1 : 1
-    };
-    await storage.set(key, JSON.stringify(next));
-    return Object.freeze({
-      enabled: true,
-      type: storage.type,
-      status: previous && previous.visitorId === visitorId ? "updated" : "created",
-      firstSeenAt: next.firstSeenAt,
-      seenCount: next.seenCount
-    });
-  } catch (error) {
-    return Object.freeze({
-      enabled: true,
-      type: storage.type,
-      status: "error",
-      error: normalizeError(error)
-    });
-  }
-}
-function canUseStorage(globalRef, key) {
-  try {
-    const storage = globalRef && globalRef[key];
-    if (!storage || typeof storage.setItem !== "function" || typeof storage.removeItem !== "function") {
-      return false;
-    }
-    const testKey = "__fingerprint_framework_test__";
-    storage.setItem(testKey, "1");
-    storage.removeItem(testKey);
-    return true;
-  } catch (_error) {
-    return false;
-  }
-}
-
 // src/collectors/storage-signals.js
 function createStorageCapabilitiesCollector() {
   return createCollector({
@@ -1593,6 +1830,8 @@ function createDefaultCollectors() {
     createTouchSupportCollector(),
     createArchitectureCollector(),
     createStorageCapabilitiesCollector(),
+    createBotDetectionCollector(),
+    createPrivacyModeCollector(),
     createPluginsCollector(),
     createVendorFlavorsCollector(),
     createPdfViewerCollector(),
@@ -2146,11 +2385,13 @@ export {
   VERSION,
   canonicalStringify,
   componentsToDebugString,
+  createBotDetectionCollector,
   createBrowserCollectorPack,
   createClient,
   createCollector,
   createDefaultCollectors,
   createPolicy,
+  createPrivacyModeCollector,
   hashComponents,
   hashValue,
   loadClient

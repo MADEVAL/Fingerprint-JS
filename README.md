@@ -26,6 +26,11 @@ const result = await client.get({
 
 console.log(result.visitorId, result.confidence.score);
 
+const bot = result.components.find((component) => component.id === 'browser.botDetection');
+const privacy = result.components.find((component) => component.id === 'browser.privacyMode');
+
+console.log(bot?.value?.verdict, privacy?.value?.verdict);
+
 const recalculated = await hashComponents(result.components, {
   namespace: 'my-product'
 });
@@ -63,7 +68,9 @@ After building, include the generated file directly:
 - Policy layer with allow/deny collectors, categories, sensitivity limits, and consent gates.
 - Deterministic canonical normalization before hashing.
 - Browser quirk detection for known unstable Safari, Firefox, Firefox iOS, iOS desktop mode, Chromium, and Samsung Internet paths.
-- Expanded built-in collectors for client hints, navigator properties, screen frame, media preferences, touch, architecture, storage capabilities, plugins, vendor flavors, PDF viewer, Apple Pay, Private Click Measurement, DOM blockers, iframe-isolated fonts, font preferences, audio base latency, audio fingerprinting, WebGL extensions, canvas, and math behavior.
+- Expanded built-in collectors for client hints, navigator properties, bot and automation evidence, private-mode indicators, screen frame, media preferences, touch, architecture, storage capabilities, plugins, vendor flavors, PDF viewer, Apple Pay, Private Click Measurement, DOM blockers, iframe-isolated fonts, font preferences, audio base latency, audio fingerprinting, WebGL extensions, canvas, and math behavior.
+- `browser.botDetection` returns a scored verdict with evidence such as WebDriver exposure, automation globals, headless user agents, language/plugin inconsistencies, and impossible window dimensions.
+- `browser.privacyMode` returns conservative private-mode indicators from storage availability, IndexedDB behavior, quota estimates, and persistence state. Modern browsers intentionally do not expose a universal incognito flag, so this component reports likelihood and evidence rather than pretending to be an oracle.
 - SHA-256 via Web Crypto or Node Crypto, with fallback support for constrained runtimes.
 - Confidence scoring and collector error metadata.
 - Optional visit state storage through `localStorage` or a custom adapter.

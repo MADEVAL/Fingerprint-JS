@@ -300,6 +300,194 @@ test('storage capabilities handles feature getters that throw', () => {
   assert.equal(normal.indexedDB, true);
 });
 
+test('bot detection collector scores automation evidence conservatively', () => {
+  const botDetection = collector('browser.botDetection');
+
+  const human = botDetection.collect({
+    navigator: {
+      userAgent: 'Mozilla/5.0 Chrome/120.0 Safari/537.36',
+      language: 'en-US',
+      languages: ['en-US'],
+      plugins: { length: 1, 0: { name: 'PDF Viewer' } },
+      mimeTypes: { length: 1, 0: { type: 'application/pdf' } }
+    },
+    window: { outerWidth: 1200, outerHeight: 800, innerWidth: 1180, innerHeight: 760 }
+  });
+  assert.equal(human.verdict, 'likely_human');
+  assert.deepEqual(human.evidence, []);
+
+  const bot = botDetection.collect({
+    navigator: {
+      webdriver: true,
+      userAgent: 'Mozilla/5.0 HeadlessChrome/120.0 Safari/537.36',
+      language: 'en-US',
+      languages: [],
+      plugins: { length: 0 },
+      mimeTypes: { length: 0 }
+    },
+    window: {
+      __webdriver_evaluate: true,
+      __playwright__binding__: true,
+      outerWidth: 0,
+      outerHeight: 0,
+      innerWidth: 1024,
+      innerHeight: 768
+    }
+  });
+  assert.equal(bot.verdict, 'bot');
+  assert.equal(bot.score, 1);
+  assert.equal(bot.confidence, 'high');
+  assert.ok(bot.evidence.includes('navigator.webdriver'));
+  assert.ok(bot.evidence.includes('automation.globals'));
+  assert.ok(bot.evidence.includes('headless.userAgent'));
+
+  const weak = botDetection.collect({
+    navigator: {
+      userAgent: 'Mozilla/5.0 Chrome/120.0 Safari/537.36',
+      language: 'en-US',
+      languages: [],
+      plugins: { length: 0 },
+      mimeTypes: { length: 0 }
+    },
+    window: {}
+  });
+  assert.equal(weak.verdict, 'likely_human');
+  assert.equal(weak.confidence, 'low');
+
+  const suspicious = botDetection.collect({
+    navigator: {
+      userAgent: 'Mozilla/5.0 Firefox/120.0',
+      language: '',
+      languages: ['en-US', '', 3],
+      plugins: null,
+      mimeTypes: null
+    },
+    window: { __nightmare: true, outerWidth: 0, outerHeight: 0, innerWidth: 0, innerHeight: 10 }
+  });
+  assert.equal(suspicious.verdict, 'suspicious');
+  assert.equal(suspicious.confidence, 'medium');
+
+  const sparse = botDetection.collect({ window: {} });
+  assert.equal(sparse.verdict, 'likely_human');
+});
+
+test('privacy mode collector reports browser-only private-mode indicators', async () => {
+  const privacy = collector('browser.privacyMode');
+
+  const unsupported = await privacy.collect({ global: { process: { versions: { node: '24.0.0' } } }, document: null });
+  assert.equal(unsupported.verdict, 'unsupported');
+
+  const available = await privacy.collect({
+    document: {},
+    global: {
+      localStorage: createFakeStorage(),
+      sessionStorage: createFakeStorage(),
+      indexedDB: createFakeIndexedDb('success')
+    },
+    navigator: {
+      storage: {
+        estimate: async () => ({ quota: 1024 * 1024 * 1024, usage: 1024 }),
+        persisted: async () => true
+      }
+    }
+  });
+  assert.equal(available.verdict, 'no_private_evidence');
+  assert.deepEqual(available.evidence, []);
+
+  const likelyPrivate = await privacy.collect({
+    document: {},
+    global: {
+      localStorage: createThrowingStorage(),
+      sessionStorage: createThrowingStorage(),
+      indexedDB: createFakeIndexedDb('error')
+    },
+    navigator: {
+      storage: {
+        estimate: async () => ({ quota: 64 * 1024 * 1024, usage: Number.NaN }),
+        persisted: async () => false
+      }
+    }
+  });
+  assert.equal(likelyPrivate.verdict, 'likely_private');
+  assert.ok(likelyPrivate.evidence.includes('localStorage.blocked'));
+  assert.ok(likelyPrivate.evidence.includes('indexedDB.blocked'));
+  assert.ok(likelyPrivate.evidence.includes('storage.lowQuota'));
+
+  const missingIndexedDb = await privacy.collect({ document: {}, global: {}, navigator: {} });
+  assert.equal(missingIndexedDb.verdict, 'likely_private');
+  assert.equal(missingIndexedDb.checks.find((check) => check.name === 'indexedDB.blocked').detail, 'missing');
+
+  const browserLikeWithoutDocument = await privacy.collect({ global: {}, navigator: {} });
+  assert.equal(browserLikeWithoutDocument.verdict, 'likely_private');
+
+  const blockedIndexedDb = await privacy.collect({
+    document: {},
+    global: { localStorage: createFakeStorage(), sessionStorage: createFakeStorage(), indexedDB: createFakeIndexedDb('blocked') },
+    navigator: { storage: { estimate: async () => { throw new Error('quota denied'); }, persisted: async () => { throw new Error('persist denied'); } } }
+  });
+  assert.equal(blockedIndexedDb.checks.find((check) => check.name === 'indexedDB.blocked').detail, 'blocked');
+  assert.equal(blockedIndexedDb.checks.find((check) => check.name === 'storage.lowQuota').detail, 'unavailable');
+
+  const exceptionalIndexedDb = await privacy.collect({
+    document: {},
+    global: { localStorage: createFakeStorage(), sessionStorage: createFakeStorage(), indexedDB: { open: () => { throw new Error('idb denied'); } } },
+    navigator: {}
+  });
+  assert.equal(exceptionalIndexedDb.checks.find((check) => check.name === 'indexedDB.blocked').detail, 'exception');
+
+  const unknownIndexedDb = await privacy.collect({
+    document: {},
+    global: { localStorage: createFakeStorage(), sessionStorage: createFakeStorage(), indexedDB: { open: () => null } },
+    navigator: {}
+  });
+  assert.equal(unknownIndexedDb.checks.find((check) => check.name === 'indexedDB.blocked').detail, 'unknown');
+
+  const nonObjectIndexedDb = await privacy.collect({
+    document: {},
+    global: { localStorage: createFakeStorage(), sessionStorage: createFakeStorage(), indexedDB: { open: () => 1 } },
+    navigator: { storage: {} }
+  });
+  assert.equal(nonObjectIndexedDb.checks.find((check) => check.name === 'indexedDB.blocked').detail, 'unknown');
+
+  const nonFunctionIndexedDb = await privacy.collect({
+    document: {},
+    global: { localStorage: createFakeStorage(), sessionStorage: createFakeStorage(), indexedDB: { open: true } },
+    navigator: { storage: {} }
+  });
+  assert.equal(nonFunctionIndexedDb.checks.find((check) => check.name === 'indexedDB.blocked').detail, 'missing');
+
+  const possiblePrivate = await privacy.collect({
+    document: {},
+    global: { localStorage: createFakeStorage(), sessionStorage: createFakeStorage(), indexedDB: createFakeIndexedDb('blocked') },
+    navigator: { storage: { estimate: async () => ({ quota: 0, usage: 0 }), persisted: async () => true } }
+  });
+  assert.equal(possiblePrivate.verdict, 'possible_private');
+  assert.equal(possiblePrivate.confidence, 'low');
+
+  const nullQuota = await privacy.collect({
+    document: {},
+    global: { localStorage: createFakeStorage(), sessionStorage: createFakeStorage(), indexedDB: createFakeIndexedDb('success-no-cleanup') },
+    navigator: { storage: { estimate: async () => ({}), persisted: async () => true } }
+  });
+  assert.equal(nullQuota.checks.find((check) => check.name === 'storage.lowQuota').detail.quota, null);
+
+  const nullDatabase = await privacy.collect({
+    document: {},
+    global: { localStorage: createFakeStorage(), sessionStorage: createFakeStorage(), indexedDB: createFakeIndexedDb('success-null-result') },
+    navigator: { storage: { estimate: async () => ({ quota: 1024 * 1024 * 1024 }), persisted: async () => true } }
+  });
+  assert.equal(nullDatabase.verdict, 'no_private_evidence');
+
+  const omittedNavigator = await privacy.collect({
+    document: {},
+    global: { localStorage: createFakeStorage(), sessionStorage: createFakeStorage(), indexedDB: createFakeIndexedDb('success') }
+  });
+  assert.equal(omittedNavigator.verdict, 'no_private_evidence');
+
+  const omittedGlobal = await privacy.collect({ document: {}, navigator: {} });
+  assert.equal(omittedGlobal.verdict, 'likely_private');
+});
+
 test('browser quirk detection marks unstable browser modes', () => {
   const safari = detectBrowserQuirks({
     navigator: {
@@ -1243,6 +1431,56 @@ function createFakeAudioContext(options = {}) {
   }
 
   return FakeAudioContext;
+}
+
+function createFakeStorage() {
+  const values = new Map();
+  return {
+    setItem(key, value) {
+      values.set(key, String(value));
+    },
+    removeItem(key) {
+      values.delete(key);
+    }
+  };
+}
+
+function createThrowingStorage() {
+  return {
+    setItem() {
+      throw new Error('storage blocked');
+    },
+    removeItem() {}
+  };
+}
+
+function createFakeIndexedDb(mode) {
+  const api = {
+    open() {
+      const request = {};
+      queueMicrotask(() => {
+        if (mode === 'success' || mode === 'success-no-cleanup' || mode === 'success-null-result') {
+          request.result = mode === 'success' ? { close() {} } : mode === 'success-no-cleanup' ? {} : null;
+          request.onsuccess && request.onsuccess();
+          if (mode === 'success') {
+            request.onsuccess && request.onsuccess();
+          }
+        } else if (mode === 'blocked') {
+          request.onblocked && request.onblocked();
+        } else {
+          request.onerror && request.onerror();
+        }
+      });
+      return request;
+    },
+    deleteDatabase() {}
+  };
+
+  if (mode === 'success-no-cleanup') {
+    delete api.deleteDatabase;
+  }
+
+  return api;
 }
 
 function createSparseOfflineAudioContext() {

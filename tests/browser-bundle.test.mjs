@@ -15,7 +15,9 @@ test('browser bundle exposes global API and identifies in a restricted VM contex
   vm.runInContext(code, context);
 
   assert.equal(typeof context.FingerprintFramework.createClient, 'function');
+  assert.equal(typeof context.FingerprintFramework.createBotDetectionCollector, 'function');
   assert.equal(typeof context.FingerprintFramework.loadClient, 'function');
+  assert.equal(typeof context.FingerprintFramework.createPrivacyModeCollector, 'function');
   assert.equal(typeof context.FingerprintFramework.hashComponents, 'function');
   assert.equal(typeof context.FingerprintFramework.componentsToDebugString, 'function');
 
