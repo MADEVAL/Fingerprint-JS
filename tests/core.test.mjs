@@ -2,10 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   canonicalStringify,
+  componentsToDebugString,
   createClient,
   createCollector,
   createPolicy,
-  hashValue
+  hashValue,
+  loadClient
 } from '../src/index.js';
 
 test('canonicalStringify sorts object keys and removes unsupported values', () => {
@@ -155,4 +157,48 @@ test('custom storage records repeat visits', async () => {
   assert.equal(first.meta.storage.status, 'created');
   assert.equal(second.meta.storage.status, 'updated');
   assert.equal(second.meta.storage.seenCount, 2);
+});
+
+test('loadClient prepares a client and get aliases identify', async () => {
+  let idleCalled = false;
+  const client = await loadClient({
+    namespace: 'load-suite',
+    loadDelayMs: 5,
+    collectors: [
+      createCollector({
+        id: 'load.signal',
+        collect: () => 'ready'
+      })
+    ],
+    now: () => Date.UTC(2024, 2, 3)
+  }, {
+    global: {
+      requestIdleCallback(callback, options) {
+        idleCalled = options.timeout === 10;
+        callback();
+      }
+    }
+  });
+
+  assert.equal(idleCalled, true);
+  assert.equal(client.preparedAt, '2024-03-03T00:00:00.000Z');
+
+  const result = await client.get({ consent: true });
+  assert.ok(result.visitorId);
+  assert.equal(result.components[0].id, 'load.signal');
+});
+
+test('debug output formats component values and errors', async () => {
+  assert.throws(() => componentsToDebugString(null), /components must be an array/u);
+
+  const client = createClient({
+    collectors: [
+      createCollector({ id: 'debug.ok', collect: () => ({ value: true }) }),
+      createCollector({ id: 'debug.error', collect: () => { throw new Error('debug failure'); } })
+    ]
+  });
+
+  const debug = await client.debug({ consent: true });
+  assert.match(debug, /debug\.ok \[ok\] \{"value":true\}/u);
+  assert.match(debug, /debug\.error \[error\]/u);
 });

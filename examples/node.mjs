@@ -1,11 +1,11 @@
-import { createClient } from '../src/index.js';
+import { loadClient } from '../src/index.js';
 
-const client = createClient({
+const client = await loadClient({
   namespace: 'node-example',
   profile: 'balanced'
 });
 
-const result = await client.identify({
+const result = await client.get({
   consent: { granted: true, purpose: 'demo' }
 });
 

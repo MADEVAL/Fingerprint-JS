@@ -1,6 +1,7 @@
 export const VERSION = '0.1.0';
 export const SCHEMA_VERSION = 'ff-v1';
 export const DEFAULT_COLLECTOR_TIMEOUT_MS = 700;
+export const DEFAULT_LOAD_DELAY_MS = 50;
 
 export const SENSITIVITY_RANK = Object.freeze({ low: 1, medium: 2, high: 3 });
 

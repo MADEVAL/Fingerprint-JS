@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 const budgets = [
   {
     file: 'dist/browser/fingerprint-framework.min.js',
-    maxBytes: 30000
+    maxBytes: 45000
   }
 ];
 

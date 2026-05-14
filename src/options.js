@@ -1,4 +1,4 @@
-import { DEFAULT_COLLECTOR_TIMEOUT_MS, PROFILE_PRESETS } from './constants.js';
+import { DEFAULT_COLLECTOR_TIMEOUT_MS, DEFAULT_LOAD_DELAY_MS, PROFILE_PRESETS } from './constants.js';
 import { defaultNamespace } from './runtime.js';
 import { resolveStorage } from './storage.js';
 
@@ -19,6 +19,7 @@ export function normalizeClientOptions(options) {
     collectorTimeoutMs: Number.isFinite(options.collectorTimeoutMs)
       ? Math.max(0, Number(options.collectorTimeoutMs))
       : DEFAULT_COLLECTOR_TIMEOUT_MS,
+    loadDelayMs: Number.isFinite(options.loadDelayMs) ? Math.max(0, Number(options.loadDelayMs)) : DEFAULT_LOAD_DELAY_MS,
     storage,
     storageKey: `fingerprint-framework:${namespace}:state`,
     consent: options.consent || null,

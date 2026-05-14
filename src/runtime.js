@@ -47,3 +47,24 @@ export function defaultNamespace() {
 
   return 'default';
 }
+
+export function waitForRuntimeIdle(globalRef, delayMs) {
+  const runtimeGlobal = globalRef || getGlobal();
+  const delay = Number.isFinite(delayMs) ? Math.max(0, Number(delayMs)) : 0;
+
+  if (runtimeGlobal && typeof runtimeGlobal.requestIdleCallback === 'function') {
+    return new Promise((resolve) => {
+      runtimeGlobal.requestIdleCallback(() => resolve(), { timeout: Math.max(delay * 2, 1) });
+    });
+  }
+
+  const setTimer = runtimeGlobal && typeof runtimeGlobal.setTimeout === 'function'
+    ? runtimeGlobal.setTimeout.bind(runtimeGlobal)
+    : getGlobal().setTimeout;
+
+  if (typeof setTimer !== 'function' || delay === 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => setTimer(resolve, delay));
+}

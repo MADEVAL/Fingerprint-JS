@@ -11,6 +11,7 @@ import {
   createPolicy,
   hashValue
 } from '../src/index.js';
+import { createRuntimeContext, hasConsent, waitForRuntimeIdle } from '../src/runtime.js';
 import { createMemoryStorage } from '../src/storage-public.js';
 
 test('exports stable metadata and collector packs', () => {
@@ -443,6 +444,95 @@ test('duration measurement falls back when performance is unavailable', async ()
   } finally {
     restoreGlobalProperty('performance', previousPerformance);
   }
+});
+
+test('client prepare supports timer and immediate runtime paths', async () => {
+  let timerDelay = null;
+  const timerClient = createClient({
+    loadDelayMs: 7,
+    collectors: []
+  });
+
+  await timerClient.prepare({
+    global: {
+      setTimeout(callback, delay) {
+        timerDelay = delay;
+        callback();
+      }
+    }
+  });
+  assert.equal(timerDelay, 7);
+  assert.ok(timerClient.preparedAt);
+
+  const immediateClient = createClient({ loadDelayMs: 0, collectors: [] });
+  await immediateClient.prepare({ global: {} });
+  assert.ok(immediateClient.preparedAt);
+
+  const previousSetTimeout = Object.getOwnPropertyDescriptor(globalThis, 'setTimeout');
+  Object.defineProperty(globalThis, 'setTimeout', { configurable: true, value: undefined });
+  try {
+    const noTimerClient = createClient({ loadDelayMs: 5, collectors: [] });
+    await noTimerClient.prepare({ global: {} });
+    assert.ok(noTimerClient.preparedAt);
+  } finally {
+    restoreGlobalProperty('setTimeout', previousSetTimeout);
+  }
+});
+
+test('runtime context uses explicit values, global fallbacks, and option fallbacks', async () => {
+  const optionNow = () => 1;
+  const contextNow = () => 2;
+  const options = { consent: { granted: true }, now: optionNow };
+  const globalRef = {
+    window: { name: 'window-from-global' },
+    document: { nodeType: 9 },
+    navigator: { userAgent: 'global' },
+    screen: { width: 1 },
+    crypto: { randomUUID: () => 'global-id' }
+  };
+
+  const fallback = createRuntimeContext(options, { global: globalRef });
+  assert.equal(fallback.window.name, 'window-from-global');
+  assert.equal(fallback.document.nodeType, 9);
+  assert.equal(fallback.navigator.userAgent, 'global');
+  assert.equal(fallback.screen.width, 1);
+  assert.equal(fallback.crypto.randomUUID(), 'global-id');
+  assert.equal(fallback.consent.granted, true);
+  assert.equal(fallback.now(), 1);
+
+  const explicit = createRuntimeContext(options, {
+    global: {},
+    window: { name: 'explicit-window' },
+    document: { nodeType: 10 },
+    navigator: { userAgent: 'explicit' },
+    screen: { width: 2 },
+    crypto: { randomUUID: () => 'explicit-id' },
+    consent: false,
+    now: contextNow
+  });
+  assert.equal(explicit.window.name, 'explicit-window');
+  assert.equal(explicit.document.nodeType, 10);
+  assert.equal(explicit.navigator.userAgent, 'explicit');
+  assert.equal(explicit.screen.width, 2);
+  assert.equal(explicit.crypto.randomUUID(), 'explicit-id');
+  assert.equal(explicit.consent.granted, true);
+  assert.equal(explicit.now(), 2);
+
+  let idleTimeout = null;
+  await waitForRuntimeIdle({
+    requestIdleCallback(callback, optionsArg) {
+      idleTimeout = optionsArg.timeout;
+      callback();
+    }
+  }, Number.NaN);
+  assert.equal(idleTimeout, 1);
+
+  await waitForRuntimeIdle(undefined, 0);
+  assert.equal(hasConsent(true), true);
+  assert.equal(hasConsent(null), false);
+  assert.equal(hasConsent('yes'), false);
+  assert.equal(hasConsent({ granted: true }), true);
+  assert.equal(hasConsent({ granted: false }), false);
 });
 
 test('collector timeout wrapper is bypassed when timers are unavailable', async () => {

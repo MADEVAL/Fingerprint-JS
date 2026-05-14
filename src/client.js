@@ -4,21 +4,35 @@ import { collectComponents, normalizeCollectors, redactComponent } from './compo
 import { calculateConfidence, createHashPayload } from './confidence.js';
 import { SCHEMA_VERSION, VERSION } from './constants.js';
 import { hashValue } from './crypto.js';
+import { componentsToDebugString } from './debug.js';
 import { elapsedSince, nowMs } from './environment.js';
 import { normalizeClientOptions } from './options.js';
 import { createPolicy } from './policy.js';
-import { createRequestId, createRuntimeContext, hasConsent } from './runtime.js';
+import { createRequestId, createRuntimeContext, hasConsent, waitForRuntimeIdle } from './runtime.js';
 import { updateStorageState } from './storage.js';
 
 export function createClient(options = {}) {
   const clientOptions = normalizeClientOptions(options);
   const collectors = normalizeCollectors(options.collectors || createDefaultCollectors());
   const policy = createPolicy(clientOptions.profile, options.policy || {});
+  const state = { preparedAt: null };
 
-  return Object.freeze({
+  const client = {
     version: VERSION,
     profile: clientOptions.profile,
     collectors: collectors.map((collector) => collector.id),
+    get preparedAt() {
+      return state.preparedAt;
+    },
+    async prepare(context = {}) {
+      const runtime = createRuntimeContext(clientOptions, context);
+      await waitForRuntimeIdle(runtime.global, clientOptions.loadDelayMs);
+      state.preparedAt = new Date(runtime.now()).toISOString();
+      return client;
+    },
+    async get(context = {}) {
+      return identifyWithCollectors(collectors, policy, clientOptions, context);
+    },
     async identify(context = {}) {
       return identifyWithCollectors(collectors, policy, clientOptions, context);
     },
@@ -26,8 +40,14 @@ export function createClient(options = {}) {
       const runtime = createRuntimeContext(clientOptions, context);
       const collected = await collectComponents(collectors, policy, runtime, clientOptions.collectorTimeoutMs);
       return collected.map((component) => redactComponent(component, policy));
+    },
+    async debug(context = {}) {
+      const components = await client.components(context);
+      return componentsToDebugString(components);
     }
-  });
+  };
+
+  return Object.freeze(client);
 }
 
 async function identifyWithCollectors(collectors, policy, clientOptions, context) {

@@ -58,6 +58,7 @@ export interface ClientOptions {
   namespace?: string;
   salt?: string;
   collectorTimeoutMs?: number;
+  loadDelayMs?: number;
   collectors?: CollectorDefinition[];
   policy?: PolicyOptions;
   storage?: false | 'local' | StorageAdapter;
@@ -114,16 +115,22 @@ export interface FingerprintClient {
   version: string;
   profile: PrivacyProfile;
   collectors: string[];
+  readonly preparedAt: string | null;
+  prepare(context?: IdentifyContext): Promise<FingerprintClient>;
+  get(context?: IdentifyContext): Promise<IdentifyResult>;
   identify(context?: IdentifyContext): Promise<IdentifyResult>;
   components(context?: IdentifyContext): Promise<ComponentResult[]>;
+  debug(context?: IdentifyContext): Promise<string>;
 }
 
 export const VERSION: string;
 export const PROFILE_PRESETS: Record<PrivacyProfile, Record<string, unknown>>;
 export function createClient(options?: ClientOptions): FingerprintClient;
+export function loadClient(options?: ClientOptions, context?: IdentifyContext): Promise<FingerprintClient>;
 export function createCollector<T = unknown>(definition: CollectorDefinition<T>): Collector<T>;
 export function createDefaultCollectors(): Collector[];
 export function createBrowserCollectorPack(): Collector[];
 export function createPolicy(profile?: PrivacyProfile, overrides?: PolicyOptions): Record<string, unknown>;
 export function canonicalStringify(value: unknown): string;
+export function componentsToDebugString(components: ComponentResult[]): string;
 export function hashValue(value: unknown, runtime?: Partial<CollectorContext>): Promise<{ algorithm: string; value: string }>;

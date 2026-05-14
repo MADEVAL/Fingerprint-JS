@@ -13,14 +13,14 @@ npm run verify
 ### ESM
 
 ```js
-import { createClient } from '@fingerprint-framework/core';
+import { loadClient } from '@fingerprint-framework/core';
 
-const client = createClient({
+const client = await loadClient({
   namespace: 'my-product',
   profile: 'balanced'
 });
 
-const result = await client.identify({
+const result = await client.get({
   consent: { granted: true, purpose: 'fraud-prevention' }
 });
 
@@ -39,7 +39,7 @@ After building, include the generated file directly:
     profile: 'balanced'
   });
 
-  client.identify({ consent: { granted: true } }).then((result) => {
+  client.prepare().then(() => client.get({ consent: { granted: true } })).then((result) => {
     console.log(result.visitorId, result.confidence);
   });
 </script>
@@ -56,9 +56,13 @@ After building, include the generated file directly:
 - Collector API for custom signals.
 - Policy layer with allow/deny collectors, categories, sensitivity limits, and consent gates.
 - Deterministic canonical normalization before hashing.
+- Browser quirk detection for known unstable Safari, Firefox, iOS, Chromium, and Samsung Internet paths.
+- Expanded built-in collectors for client hints, screen frame, media preferences, touch, architecture, plugins, vendor flavors, PDF viewer, Apple Pay, Private Click Measurement, DOM blockers, fonts, audio, WebGL extensions, canvas, and math behavior.
 - SHA-256 via Web Crypto or Node Crypto, with fallback support for constrained runtimes.
 - Confidence scoring and collector error metadata.
 - Optional visit state storage through `localStorage` or a custom adapter.
+- `loadClient()` / `prepare()` / `get()` flow for startup warmup and faster later identification.
+- `componentsToDebugString()` and `client.debug()` for human-readable diagnostics.
 - Script-tag global API: `FingerprintFramework`.
 
 ## Package Subpaths
@@ -76,6 +80,6 @@ import { createMemoryStorage } from '@fingerprint-framework/core/storage';
 - `npm run typecheck` validates published declaration files through package imports.
 - `npm run test:coverage` enforces 100% line, branch, and function coverage for `src/**/*.js`.
 - `npm run test:browser` runs the standalone browser build in Chromium, Firefox, and WebKit.
-- `npm run check:size` enforces the browser minified bundle size budget.
+- `npm run check:size` enforces the browser minified bundle size budget, currently 45 KB for the expanded collector pack.
 
-The technical specification is available in [docs/TECHNICAL_SPEC.md](docs/TECHNICAL_SPEC.md). The current implementation audit is available in [docs/AUDIT_REPORT.md](docs/AUDIT_REPORT.md).
+The technical specification is available in [docs/TECHNICAL_SPEC.md](docs/TECHNICAL_SPEC.md). The identifier version policy is available in [docs/VERSION_POLICY.md](docs/VERSION_POLICY.md). The current implementation audit is available in [docs/AUDIT_REPORT.md](docs/AUDIT_REPORT.md).

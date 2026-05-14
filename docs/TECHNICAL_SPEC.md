@@ -54,8 +54,8 @@ The package must ship:
 Main entry point:
 
 ```js
-const client = createClient(options);
-const result = await client.identify(context);
+const client = await loadClient(options);
+const result = await client.get(context);
 ```
 
 `createClient` is responsible for:
@@ -69,6 +69,8 @@ const result = await client.identify(context);
 - `visitorId` calculation;
 - confidence scoring;
 - optional storage state updates.
+
+`loadClient(options, context)` creates a client and calls `prepare(context)`. `prepare()` waits for an idle browser moment when available and records `preparedAt`; it does not collect high-sensitivity signals by itself. `get()` is an alias for `identify()` for FingerprintJS-style integrations.
 
 ### 5.2 Collector API
 
@@ -156,15 +158,34 @@ Storage keeps only project-namespaced visit state: `firstSeenAt`, `lastSeenAt`, 
 
 Minimum set:
 
-- `runtime.browser`: user agent, platform, vendor, UA Client Hints basic data;
+- `runtime.browser`: user agent, platform, vendor, webdriver, UA Client Hints basic data;
+- `runtime.clientHints`: high-entropy UA Client Hints when the browser exposes them;
 - `runtime.node`: Node version/platform/arch for server and test runtimes;
 - `locale`: language, languages, Intl locale;
+- `locale.datetime`: calendar, numbering system, hour cycle;
 - `timezone`: timezone, timezone offset;
 - `screen.metrics`: screen size, color depth, DPR;
-- `hardware`: concurrency, device memory, touch points;
-- `storage.capabilities`: cookies, localStorage/sessionStorage availability, Do Not Track;
+- `screen.frame`: browser chrome/frame metrics with unstable Safari/Firefox paths suppressed;
+- `display.mediaPreferences`: color gamut, forced/inverted colors, contrast, motion, transparency, HDR, monochrome;
+- `hardware`: concurrency, device memory, touch points, with RFP-like hardware counts suppressed;
+- `hardware.touch`: touch event and pointer media-query support;
+- `hardware.architecture`: typed-array architecture byte pattern;
+- `storage.capabilities`: cookies, IndexedDB, localStorage/sessionStorage, openDatabase, Do Not Track;
+- `browser.plugins`: plugins and MIME types;
+- `browser.vendorFlavors`: browser-specific global markers;
+- `browser.pdfViewer`: native PDF viewer flag;
+- `browser.applePay`: Apple Pay API availability state;
+- `browser.privateClickMeasurement`: WebKit Private Click Measurement marker;
+- `browser.domBlockers`: local DOM bait checks for content blocker signals, active and volatile;
+- `fonts.available`: font availability through FontFaceSet or layout measurement, active and volatile;
+- `fonts.preferences`: default font metrics, active and volatile;
+- `audio.fingerprint`: OfflineAudioContext checksum with unstable browser suppression;
 - `webgl.renderer`: WebGL vendor/renderer data, high sensitivity, active;
-- `canvas.checksum`: deterministic canvas checksum, high sensitivity, active.
+- `webgl.extensions`: WebGL extensions and limits, high sensitivity, active;
+- `canvas.checksum`: geometry/text canvas checksum with known randomization suppression, high sensitivity, active;
+- `math.fingerprint`: deterministic JavaScript math behavior.
+
+Collectors that touch layout, graphics, audio, or blocker baits are marked active and are disabled unless the policy allows active collection.
 
 ## 7. Public Result Shape
 
@@ -193,6 +214,8 @@ Minimum set:
 }
 ```
 
+`componentsToDebugString(components)` and `client.debug(context)` produce a stable human-readable diagnostic dump for support and integration debugging.
+
 ## 8. Quality Bar
 
 The implementation must pass:
@@ -218,12 +241,11 @@ Tests must cover:
 - browser bundle global API smoke tests;
 - package self-reference imports and subpath imports.
 
+The browser bundle size gate is set to 45 KB for `dist/browser/fingerprint-framework.min.js` after the expanded collector pack.
+
 ## 9. Post-MVP Roadmap
 
-- Subpath modules: `@fingerprint-framework/core/collectors`, `.../storage`, `.../policy`.
 - Dedicated risk engine over collected signals.
 - Async plugin registry.
 - Preset collector package for fraud and risk scoring.
-- Browser automation test matrix through Playwright.
-- Bundle size budgets.
-- Public compatibility contract and semver policy.
+- Product-specific real-browser stability fixtures across repeated runs, private contexts where automation supports them, and CSS interference cases.
