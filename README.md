@@ -210,6 +210,8 @@ The browser demo in [examples/browser.html](examples/browser.html) renders three
 
 All demo outputs are generated from the same `IdentifyResult` and are ordered by verbosity: ID analysis, compact report, then full report. The compact format includes every collected capability with readable summaries. The ID analysis format keeps every component represented through weight and result maps without dumping raw component objects. The full format additionally embeds the raw result and explainable report. Use the `extended` profile in the demo to exercise the full collector pack and confirm that report-only changes do not move the stable visitor ID.
 
+See [docs/REPORT_FORMATS.md](docs/REPORT_FORMATS.md) for a field-by-field interpretation guide with one sentence per field.
+
 The debug inspector in [examples/inspector.html](examples/inspector.html) accepts an `IdentifyResult`, full demo report JSON, or ID analysis report JSON and explains identity components, report-only components, tamper, bot, and private-mode evidence.
 
 ## Verification
@@ -228,6 +230,7 @@ Additional docs:
 - [CONTRIBUTING.md](CONTRIBUTING.md)
 - [SECURITY.md](SECURITY.md)
 - [docs/TECHNICAL_SPEC.md](docs/TECHNICAL_SPEC.md)
+- [docs/REPORT_FORMATS.md](docs/REPORT_FORMATS.md)
 - [docs/VERSION_POLICY.md](docs/VERSION_POLICY.md)
 - [docs/AUDIT_REPORT.md](docs/AUDIT_REPORT.md)
 - [docs/PUBLISHING.md](docs/PUBLISHING.md)

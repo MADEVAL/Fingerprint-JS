@@ -126,6 +126,8 @@ The browser demo additionally derives compact, ID analysis, and full reports fro
 
 All three demo outputs are derived from the same `IdentifyResult` and are ordered by verbosity: ID analysis, compact report, then full report. Component counts, identity/report-only roles, hash checks, and risk summaries stay consistent across formats.
 
+See [REPORT_FORMATS.md](REPORT_FORMATS.md) for one-sentence interpretation guidance for every field in all three demo outputs.
+
 ## Hashing And Identity
 
 Before hashing, component values are canonicalized:
