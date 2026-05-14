@@ -74,6 +74,79 @@ test('client produces deterministic visitorId for stable custom collectors', asy
   assert.equal(first.components.filter((component) => component.status === 'ok').length, 2);
 });
 
+test('report-only components do not affect visitorId by default', async () => {
+  let volatileValue = 0;
+  const client = createClient({
+    profile: 'extended',
+    namespace: 'identity-suite',
+    collectors: [
+      createCollector({ id: 'identity.stable', collect: () => 'same' }),
+      createCollector({
+        id: 'risk.changing',
+        category: 'risk',
+        stability: 'volatile',
+        hashable: false,
+        collect: () => ({ value: volatileValue += 1 })
+      })
+    ]
+  });
+
+  const first = await client.identify({ consent: true });
+  const second = await client.identify({ consent: true });
+
+  assert.equal(first.visitorId, second.visitorId);
+  assert.deepEqual(first.meta.identityComponents, ['identity.stable']);
+  assert.deepEqual(first.meta.reportOnlyComponents, ['risk.changing']);
+  assert.equal(first.components.find((component) => component.id === 'risk.changing').hashable, false);
+});
+
+test('identity options can include, allow, and deny hash inputs', async () => {
+  const collectors = [
+    createCollector({ id: 'identity.a', collect: () => 'a' }),
+    createCollector({ id: 'identity.b', collect: () => 'b' }),
+    createCollector({ id: 'report.c', hashable: false, collect: () => 'c' })
+  ];
+
+  const defaultClient = createClient({ namespace: 'identity-options', collectors });
+  const includeClient = createClient({ namespace: 'identity-options', identity: { includeNonHashable: true }, collectors });
+  const allowClient = createClient({ namespace: 'identity-options', identity: { allowCollectors: ['identity.a'] }, collectors });
+  const denyClient = createClient({ namespace: 'identity-options', identity: { denyCollectors: ['identity.b'] }, collectors });
+
+  const baseline = await defaultClient.identify({ consent: true });
+  const included = await includeClient.identify({ consent: true });
+  const allowed = await allowClient.identify({ consent: true });
+  const denied = await denyClient.identify({ consent: true });
+
+  assert.notEqual(included.visitorId, baseline.visitorId);
+  assert.equal(allowed.visitorId, denied.visitorId);
+  assert.deepEqual(included.meta.identityComponents, ['identity.a', 'identity.b', 'report.c']);
+});
+
+test('identity confidence is calibrated by platform signals', async () => {
+  const cases = [
+    [{ userAgent: 'Mozilla/5.0 Android Chrome/120 Safari/537.36', platform: 'Android' }, 0.4],
+    [{ userAgent: 'Mozilla/5.0 iPhone Version/17.0 Mobile/15E148 Safari/604.1', platform: 'iPhone' }, 0.3],
+    [{ userAgent: 'Mozilla/5.0 AppleWebKit/605.1.15 Version/17.0 Safari/605.1.15', platform: 'MacIntel' }, 0.5],
+    [{ userAgent: 'Mozilla/5.0 Chrome/120 Safari/537.36', platform: 'MacIntel' }, 0.5],
+    [{ userAgent: 'Mozilla/5.0 Chrome/120 Safari/537.36', platform: 'Win32' }, 0.6],
+    [{ userAgent: 'Mozilla/5.0 Firefox/120.0', platform: 'Linux x86_64' }, 0.7],
+    [{ userAgentData: { platform: 'Android' } }, 0.4],
+    ['not-an-object', 1]
+  ];
+
+  for (const [runtimeValue, expectedScore] of cases) {
+    const client = createClient({
+      namespace: `confidence-${expectedScore}`,
+      collectors: [
+        createCollector({ id: 'runtime.browser', collect: () => runtimeValue })
+      ]
+    });
+    const result = await client.identify({ consent: true });
+    assert.equal(result.confidence.platformScore, expectedScore);
+    assert.equal(result.confidence.score, expectedScore);
+  }
+});
+
 test('policy skips high sensitivity active collectors in balanced profile', async () => {
   const client = createClient({
     profile: 'balanced',
@@ -301,9 +374,45 @@ test('hashComponents recalculates visitorId from component results', async () =>
   const changed = await hashComponents(result.components.filter((component) => component.id !== 'hash.b'), { namespace: 'hash-suite', salt: 'salt' });
   const defaulted = await hashComponents([null, ...result.components]);
   const empty = await hashComponents([], { namespace: 'hash-suite' });
+  const withReportOnly = await hashComponents([
+    ...result.components,
+    Object.freeze({
+      id: 'hash.report',
+      version: '1',
+      category: 'risk',
+      sensitivity: 'low',
+      mode: 'passive',
+      stability: 'volatile',
+      weight: 1,
+      hashable: false,
+      status: 'ok',
+      value: 'changes',
+      durationMs: 0,
+      error: null
+    })
+  ], { namespace: 'hash-suite', salt: 'salt' });
+  const includeReportOnly = await hashComponents([
+    ...result.components,
+    Object.freeze({
+      id: 'hash.report',
+      version: '1',
+      category: 'risk',
+      sensitivity: 'low',
+      mode: 'passive',
+      stability: 'volatile',
+      weight: 1,
+      hashable: false,
+      status: 'ok',
+      value: 'changes',
+      durationMs: 0,
+      error: null
+    })
+  ], { namespace: 'hash-suite', salt: 'salt', includeNonHashable: true });
 
   assert.equal(hashed.visitorId, result.visitorId);
   assert.notEqual(changed.visitorId, result.visitorId);
+  assert.equal(withReportOnly.visitorId, result.visitorId);
+  assert.notEqual(includeReportOnly.visitorId, result.visitorId);
   assert.equal(defaulted.namespace, 'default');
   assert.ok(defaulted.visitorId);
   assert.equal(empty.visitorId, null);

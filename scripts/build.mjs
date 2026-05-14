@@ -28,6 +28,23 @@ await build({
   legalComments: 'none'
 });
 
+await build({
+  entryPoints: {
+    index: resolve(root, 'src/index.js'),
+    collectors: resolve(root, 'src/collectors/index.js'),
+    policy: resolve(root, 'src/policy.js'),
+    storage: resolve(root, 'src/storage-public.js')
+  },
+  outdir: distPath,
+  bundle: true,
+  format: 'cjs',
+  platform: 'node',
+  target: 'es2020',
+  outExtension: { '.js': '.cjs' },
+  banner: { js: banner },
+  legalComments: 'none'
+});
+
 const browserBuildOptions = {
   entryPoints: [resolve(root, 'src/index.js')],
   bundle: true,

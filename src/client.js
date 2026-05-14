@@ -1,7 +1,7 @@
 import { canonicalStringify } from './canonical.js';
 import { createDefaultCollectors } from './collectors/index.js';
 import { collectPreparedComponents, normalizeCollectors, prepareCollectors, redactComponent } from './components.js';
-import { calculateConfidence, createHashPayload } from './confidence.js';
+import { calculateConfidence, createHashPayload, selectIdentityComponents } from './confidence.js';
 import { SCHEMA_VERSION, VERSION } from './constants.js';
 import { hashValue } from './crypto.js';
 import { componentsToDebugString } from './debug.js';
@@ -75,9 +75,10 @@ async function identifyWithCollectors(collectors, policy, clientOptions, context
   }
 
   const components = await collectPreparedComponents(collectors, policy, runtime, clientOptions.collectorTimeoutMs, preparedValues);
-  const payload = createHashPayload(components, clientOptions.namespace, clientOptions.salt);
-  const confidence = calculateConfidence(components, collectors, policy);
-  const okComponentCount = components.filter((component) => component.status === 'ok').length;
+  const identityComponents = selectIdentityComponents(components, clientOptions.identity);
+  const payload = createHashPayload(components, clientOptions.namespace, clientOptions.salt, clientOptions.identity);
+  const confidence = calculateConfidence(components, collectors, policy, clientOptions.identity);
+  const okComponentCount = identityComponents.length;
   const hash = okComponentCount > 0 ? await hashValue(canonicalStringify(payload), runtime) : null;
   const visitorId = hash ? hash.value : null;
   const storage = await updateStorageState(clientOptions.storage, clientOptions.storageKey, visitorId, createdAt);
@@ -95,6 +96,8 @@ async function identifyWithCollectors(collectors, policy, clientOptions, context
       profile: clientOptions.profile,
       durationMs: elapsedSince(startedAt),
       hashAlgorithm: hash ? hash.algorithm : null,
+      identityComponents: identityComponents.map((component) => component.id),
+      reportOnlyComponents: components.filter((component) => component.status === 'ok' && !identityComponents.includes(component)).map((component) => component.id),
       blocked: false,
       reason: null,
       storage
@@ -113,7 +116,14 @@ function createBlockedResult(details) {
       level: 'low',
       entropy: 0,
       collectedWeight: 0,
-      possibleWeight: 0
+      possibleWeight: 0,
+      platformScore: 0,
+      collectionQuality: Object.freeze({
+        score: 0,
+        level: 'low',
+        collectedWeight: 0,
+        possibleWeight: 0
+      })
     }),
     components: Object.freeze([]),
     meta: Object.freeze({
@@ -122,6 +132,8 @@ function createBlockedResult(details) {
       profile: details.profile,
       durationMs: details.durationMs,
       hashAlgorithm: null,
+      identityComponents: Object.freeze([]),
+      reportOnlyComponents: Object.freeze([]),
       blocked: true,
       reason: details.reason,
       storage: Object.freeze({ enabled: false, status: 'skipped' })

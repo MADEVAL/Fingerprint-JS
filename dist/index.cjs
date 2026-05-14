@@ -1,6 +1,103 @@
 /* FingerprintJS by BotBlocker v0.1.0 | MIT | https://botblocker.top */
+"use strict";
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+// src/index.js
+var src_exports = {};
+__export(src_exports, {
+  PROFILE_PRESETS: () => PROFILE_PRESETS,
+  VERSION: () => VERSION,
+  canonicalStringify: () => canonicalStringify,
+  componentsToDebugString: () => componentsToDebugString,
+  createApiFeaturesCollector: () => createApiFeaturesCollector,
+  createBotDetectionCollector: () => createBotDetectionCollector,
+  createBrowserCollectorPack: () => createBrowserCollectorPack,
+  createClient: () => createClient,
+  createCollector: () => createCollector,
+  createCssFeaturesCollector: () => createCssFeaturesCollector,
+  createDefaultCollectors: () => createDefaultCollectors,
+  createNetworkConnectionCollector: () => createNetworkConnectionCollector,
+  createPerformanceMemoryCollector: () => createPerformanceMemoryCollector,
+  createPolicy: () => createPolicy,
+  createPrivacyModeCollector: () => createPrivacyModeCollector,
+  createWebglPrecisionCollector: () => createWebglPrecisionCollector,
+  hashComponents: () => hashComponents,
+  hashValue: () => hashValue,
+  loadClient: () => loadClient
+});
+module.exports = __toCommonJS(src_exports);
+
+// src/canonical.js
+function canonicalStringify(value) {
+  return JSON.stringify(toCanonical(value));
+}
+function toCanonical(value) {
+  if (value === null) {
+    return null;
+  }
+  const valueType = typeof value;
+  if (valueType === "string" || valueType === "boolean") {
+    return value;
+  }
+  if (valueType === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (valueType === "bigint") {
+    return value.toString();
+  }
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => toCanonical(item));
+  }
+  if (valueType === "undefined" || valueType === "function" || valueType === "symbol") {
+    return void 0;
+  }
+  if (valueType === "object") {
+    const output = {};
+    const keys = Object.keys(value).sort();
+    for (const key of keys) {
+      const normalized = toCanonical(value[key]);
+      if (typeof normalized !== "undefined") {
+        output[key] = normalized;
+      }
+    }
+    return output;
+  }
+}
 
 // src/constants.js
+var VERSION = "0.1.0";
+var SCHEMA_VERSION = "bbid-v2";
+var DEFAULT_COLLECTOR_TIMEOUT_MS = 700;
+var DEFAULT_LOAD_DELAY_MS = 50;
 var SENSITIVITY_RANK = Object.freeze({ low: 1, medium: 2, high: 3 });
 var PROFILE_PRESETS = Object.freeze({
   strict: Object.freeze({
@@ -1799,12 +1896,97 @@ function checksumSamples(samples) {
   return checksumString(summary);
 }
 
+// src/errors.js
+function normalizeError(error) {
+  if (!error) {
+    return Object.freeze({ code: "unknown", message: "Unknown error" });
+  }
+  return Object.freeze({
+    code: error.code || error.name || "error",
+    message: error.message || String(error)
+  });
+}
+
 // src/environment.js
 function getGlobal() {
   return globalThis;
 }
+function nowMs() {
+  if (typeof performance !== "undefined" && typeof performance.now === "function") {
+    return performance.now();
+  }
+  return Date.now();
+}
+function elapsedSince(startedAt) {
+  return round(Math.max(0, nowMs() - startedAt), 3);
+}
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+function round(value, decimals) {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
 
 // src/storage.js
+function resolveStorage(storageOption, namespace) {
+  if (!storageOption) {
+    return null;
+  }
+  if (storageOption === "local") {
+    const globalRef = getGlobal();
+    if (!canUseStorage(globalRef, "localStorage")) {
+      return null;
+    }
+    return Object.freeze({
+      type: "localStorage",
+      async get(key) {
+        return globalRef.localStorage.getItem(key);
+      },
+      async set(key, value) {
+        globalRef.localStorage.setItem(key, value);
+      }
+    });
+  }
+  if (storageOption && typeof storageOption.get === "function" && typeof storageOption.set === "function") {
+    return Object.freeze({
+      type: storageOption.type || `custom:${namespace}`,
+      get: storageOption.get.bind(storageOption),
+      set: storageOption.set.bind(storageOption)
+    });
+  }
+  throw new TypeError('storage must be false, "local", or an object with get/set methods.');
+}
+async function updateStorageState(storage, key, visitorId, createdAt) {
+  if (!storage || !visitorId) {
+    return Object.freeze({ enabled: Boolean(storage), status: visitorId ? "disabled" : "skipped" });
+  }
+  try {
+    const previousRaw = await storage.get(key);
+    const previous = previousRaw ? JSON.parse(previousRaw) : null;
+    const next = {
+      visitorId,
+      firstSeenAt: previous && previous.visitorId === visitorId ? previous.firstSeenAt : createdAt,
+      lastSeenAt: createdAt,
+      seenCount: previous && previous.visitorId === visitorId ? Number(previous.seenCount || 0) + 1 : 1
+    };
+    await storage.set(key, JSON.stringify(next));
+    return Object.freeze({
+      enabled: true,
+      type: storage.type,
+      status: previous && previous.visitorId === visitorId ? "updated" : "created",
+      firstSeenAt: next.firstSeenAt,
+      seenCount: next.seenCount
+    });
+  } catch (error) {
+    return Object.freeze({
+      enabled: true,
+      type: storage.type,
+      status: "error",
+      error: normalizeError(error)
+    });
+  }
+}
 function canUseStorage(globalRef, key) {
   try {
     const storage = globalRef && globalRef[key];
@@ -2173,16 +2355,642 @@ function createDefaultCollectors() {
 function createBrowserCollectorPack() {
   return createDefaultCollectors().filter((collector) => collector.id !== "runtime.node");
 }
-export {
+
+// src/policy.js
+function createPolicy(profile = "balanced", overrides = {}) {
+  if (!PROFILE_PRESETS[profile]) {
+    throw new TypeError(`Unknown privacy profile: ${profile}`);
+  }
+  const preset = PROFILE_PRESETS[profile];
+  const maxSensitivity = overrides.maxSensitivity || preset.maxSensitivity;
+  if (!SENSITIVITY_RANK[maxSensitivity]) {
+    throw new TypeError(`Unknown sensitivity: ${maxSensitivity}`);
+  }
+  return Object.freeze({
+    profile,
+    requireConsent: Boolean(overrides.requireConsent),
+    redactValues: Boolean(overrides.redactValues),
+    maxSensitivity,
+    includeActive: typeof overrides.includeActive === "boolean" ? overrides.includeActive : preset.includeActive,
+    includeUnstable: typeof overrides.includeUnstable === "boolean" ? overrides.includeUnstable : preset.includeUnstable,
+    allowCollectors: toFrozenSet(overrides.allowCollectors),
+    denyCollectors: toFrozenSet(overrides.denyCollectors),
+    allowCategories: toFrozenSet(overrides.allowCategories),
+    denyCategories: toFrozenSet(overrides.denyCategories)
+  });
+}
+function isCollectorAllowed(collector, policy) {
+  if (policy.denyCollectors.has(collector.id)) {
+    return false;
+  }
+  if (policy.allowCollectors.size > 0 && !policy.allowCollectors.has(collector.id)) {
+    return false;
+  }
+  if (policy.denyCategories.has(collector.category)) {
+    return false;
+  }
+  if (policy.allowCategories.size > 0 && !policy.allowCategories.has(collector.category)) {
+    return false;
+  }
+  if (SENSITIVITY_RANK[collector.sensitivity] > SENSITIVITY_RANK[policy.maxSensitivity]) {
+    return false;
+  }
+  if (collector.mode === "active" && !policy.includeActive) {
+    return false;
+  }
+  if (collector.stability === "volatile" && !policy.includeUnstable) {
+    return false;
+  }
+  return true;
+}
+function toFrozenSet(value) {
+  if (!value) {
+    return Object.freeze(/* @__PURE__ */ new Set());
+  }
+  if (!Array.isArray(value)) {
+    throw new TypeError("Policy allow/deny lists must be arrays.");
+  }
+  return Object.freeze(new Set(value.map(String)));
+}
+
+// src/components.js
+function normalizeCollectors(collectors) {
+  if (!Array.isArray(collectors)) {
+    throw new TypeError("collectors must be an array.");
+  }
+  const seen = /* @__PURE__ */ new Set();
+  return collectors.map((collector) => {
+    const normalized = collector && typeof collector.collect === "function" && collector.id ? createCollector(collector) : createCollector(collector);
+    if (seen.has(normalized.id)) {
+      throw new TypeError(`Duplicate collector id: ${normalized.id}`);
+    }
+    seen.add(normalized.id);
+    return normalized;
+  });
+}
+async function prepareCollectors(collectors, policy, runtime, timeoutMs) {
+  const allowed = collectors.filter((collector) => collector.prepare && isCollectorAllowed(collector, policy));
+  const preparedValues = /* @__PURE__ */ new Map();
+  const passiveCollectors = allowed.filter((collector) => collector.mode !== "active");
+  const activeCollectors = allowed.filter((collector) => collector.mode === "active");
+  const passiveValues = await Promise.all(passiveCollectors.map((collector) => prepareOneCollector(collector, runtime, timeoutMs)));
+  for (let index = 0; index < passiveCollectors.length; index += 1) {
+    if (passiveValues[index].ok) {
+      preparedValues.set(passiveCollectors[index].id, passiveValues[index].value);
+    }
+  }
+  for (const collector of activeCollectors) {
+    const prepared = await prepareOneCollector(collector, runtime, timeoutMs);
+    if (prepared.ok) {
+      preparedValues.set(collector.id, prepared.value);
+    }
+  }
+  return preparedValues;
+}
+async function collectPreparedComponents(collectors, policy, runtime, timeoutMs, preparedValues) {
+  const skipped = [];
+  const allowed = [];
+  for (const collector of collectors) {
+    if (!isCollectorAllowed(collector, policy)) {
+      skipped.push(createSkippedComponent(collector, "policy_denied"));
+    } else {
+      allowed.push(collector);
+    }
+  }
+  const passiveCollectors = allowed.filter((collector) => collector.mode !== "active");
+  const activeCollectors = allowed.filter((collector) => collector.mode === "active");
+  const passiveComponents = await Promise.all(
+    passiveCollectors.map((collector) => collectOneComponent(collector, runtime, timeoutMs, preparedValues))
+  );
+  const activeComponents = [];
+  for (const collector of activeCollectors) {
+    activeComponents.push(await collectOneComponent(collector, runtime, timeoutMs, preparedValues));
+  }
+  const components = skipped.concat(passiveComponents, activeComponents);
+  return components.sort((left, right) => left.id.localeCompare(right.id));
+}
+function redactComponent(component, policy) {
+  if (!policy.redactValues || component.status !== "ok") {
+    return component;
+  }
+  return Object.freeze({
+    ...component,
+    value: "[redacted]"
+  });
+}
+async function collectOneComponent(collector, runtime, timeoutMs, preparedValues) {
+  const startedAt = nowMs();
+  try {
+    const hasPrepared = preparedValues instanceof Map && preparedValues.has(collector.id);
+    const prepared = hasPrepared ? preparedValues.get(collector.id) : void 0;
+    const value = await withTimeout(Promise.resolve().then(() => collector.collect(runtime, prepared)), timeoutMs, collector.id);
+    const canonicalValue = toCanonical(value);
+    const status = canonicalValue === null ? "empty" : "ok";
+    return freezeComponent({
+      id: collector.id,
+      version: collector.version,
+      category: collector.category,
+      sensitivity: collector.sensitivity,
+      mode: collector.mode,
+      stability: collector.stability,
+      weight: collector.weight,
+      hashable: collector.hashable,
+      status,
+      value: canonicalValue,
+      durationMs: elapsedSince(startedAt),
+      error: null
+    });
+  } catch (error) {
+    return freezeComponent({
+      id: collector.id,
+      version: collector.version,
+      category: collector.category,
+      sensitivity: collector.sensitivity,
+      mode: collector.mode,
+      stability: collector.stability,
+      weight: collector.weight,
+      hashable: collector.hashable,
+      status: error && error.code === "collector_timeout" ? "timeout" : "error",
+      value: null,
+      durationMs: elapsedSince(startedAt),
+      error: normalizeError(error)
+    });
+  }
+}
+async function prepareOneCollector(collector, runtime, timeoutMs) {
+  try {
+    const value = await withTimeout(Promise.resolve().then(() => collector.prepare(runtime)), timeoutMs, `${collector.id}:prepare`);
+    return Object.freeze({ ok: true, value });
+  } catch (_error) {
+    return Object.freeze({ ok: false, value: void 0 });
+  }
+}
+function createSkippedComponent(collector, reason) {
+  return freezeComponent({
+    id: collector.id,
+    version: collector.version,
+    category: collector.category,
+    sensitivity: collector.sensitivity,
+    mode: collector.mode,
+    stability: collector.stability,
+    weight: collector.weight,
+    hashable: collector.hashable,
+    status: "skipped",
+    value: null,
+    durationMs: 0,
+    error: Object.freeze({ code: reason, message: reason })
+  });
+}
+function freezeComponent(component) {
+  return Object.freeze({
+    id: component.id,
+    version: component.version,
+    category: component.category,
+    sensitivity: component.sensitivity,
+    mode: component.mode,
+    stability: component.stability,
+    weight: component.weight,
+    hashable: component.hashable,
+    status: component.status,
+    value: component.value,
+    durationMs: component.durationMs,
+    error: component.error
+  });
+}
+function withTimeout(promise, timeoutMs, collectorId) {
+  const globalRef = getGlobal();
+  const setTimer = globalRef.setTimeout;
+  const clearTimer = globalRef.clearTimeout;
+  if (!timeoutMs || typeof setTimer !== "function" || typeof clearTimer !== "function") {
+    return promise;
+  }
+  let timeoutId;
+  const timeout = new Promise((_resolve, reject) => {
+    timeoutId = setTimer(() => {
+      const error = new Error(`Collector timed out: ${collectorId}`);
+      error.code = "collector_timeout";
+      reject(error);
+    }, timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimer(timeoutId));
+}
+
+// src/confidence.js
+function createHashPayload(components, namespace, salt, identityOptions = {}) {
+  const values = {};
+  for (const component of selectIdentityComponents(components, identityOptions)) {
+    values[component.id] = {
+      version: component.version,
+      value: component.value
+    };
+  }
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    namespace,
+    salt,
+    values
+  };
+}
+function selectIdentityComponents(components, identityOptions = {}) {
+  const allowCollectors = toStringSet(identityOptions.allowCollectors);
+  const denyCollectors = toStringSet(identityOptions.denyCollectors);
+  const includeNonHashable = Boolean(identityOptions.includeNonHashable);
+  return components.filter((component) => component && component.status === "ok" && (includeNonHashable || component.hashable !== false) && (allowCollectors.size === 0 || allowCollectors.has(component.id)) && !denyCollectors.has(component.id));
+}
+function calculateConfidence(components, collectors, policy, identityOptions = {}) {
+  let possibleCollectionWeight = 0;
+  let collectedCollectionWeight = 0;
+  let possibleIdentityWeight = 0;
+  let collectedIdentityWeight = 0;
+  let identityEntropy = 0;
+  const allowedCollectorIds = new Set(
+    collectors.filter((collector) => isCollectorAllowed(collector, policy)).map((collector) => collector.id)
+  );
+  const identityCollectorIds = new Set(collectors.filter((collector) => allowedCollectorIds.has(collector.id) && isIdentityCollector(collector, identityOptions)).map((collector) => collector.id));
+  for (const collector of collectors) {
+    if (!allowedCollectorIds.has(collector.id)) {
+      continue;
+    }
+    possibleCollectionWeight += collector.weight;
+    if (identityCollectorIds.has(collector.id)) {
+      possibleIdentityWeight += collector.weight;
+    }
+  }
+  for (const component of components) {
+    if (component.status !== "ok") {
+      continue;
+    }
+    collectedCollectionWeight += component.weight;
+    if (identityCollectorIds.has(component.id)) {
+      collectedIdentityWeight += component.weight;
+      identityEntropy += component.weight * SENSITIVITY_RANK[component.sensitivity];
+    }
+  }
+  const collectionScore = possibleCollectionWeight > 0 ? round(clamp(collectedCollectionWeight / possibleCollectionWeight, 0, 1), 3) : 0;
+  const completeness = possibleIdentityWeight > 0 ? clamp(collectedIdentityWeight / possibleIdentityWeight, 0, 1) : 0;
+  const platformScore = estimatePlatformScore(components);
+  const score = round(completeness * platformScore, 3);
+  return Object.freeze({
+    score,
+    level: score >= 0.75 ? "high" : score >= 0.45 ? "medium" : "low",
+    entropy: round(identityEntropy, 3),
+    collectedWeight: round(collectedIdentityWeight, 3),
+    possibleWeight: round(possibleIdentityWeight, 3),
+    platformScore: round(platformScore, 3),
+    collectionQuality: Object.freeze({
+      score: collectionScore,
+      level: collectionScore >= 0.75 ? "high" : collectionScore >= 0.45 ? "medium" : "low",
+      collectedWeight: round(collectedCollectionWeight, 3),
+      possibleWeight: round(possibleCollectionWeight, 3)
+    })
+  });
+}
+function isIdentityCollector(collector, identityOptions) {
+  const allowCollectors = toStringSet(identityOptions.allowCollectors);
+  const denyCollectors = toStringSet(identityOptions.denyCollectors);
+  return (identityOptions.includeNonHashable || collector.hashable !== false) && (allowCollectors.size === 0 || allowCollectors.has(collector.id)) && !denyCollectors.has(collector.id);
+}
+function toStringSet(value) {
+  return Object.freeze(new Set(Array.isArray(value) ? value.map(String) : []));
+}
+function estimatePlatformScore(components) {
+  const runtime = components.find((component) => component.id === "runtime.browser" && component.status === "ok");
+  const value = runtime && runtime.value && typeof runtime.value === "object" ? runtime.value : null;
+  const userAgent = String(value && value.userAgent || "");
+  const platform = String(value && value.platform || value && value.userAgentData && value.userAgentData.platform || "");
+  if (!value) {
+    return 1;
+  }
+  if (/Android/u.test(userAgent) || platform === "Android") {
+    return 0.4;
+  }
+  if (/Safari\//u.test(userAgent) && !/Chrome\/|Chromium\/|Edg\//u.test(userAgent)) {
+    return /Mac/u.test(platform) ? 0.5 : 0.3;
+  }
+  if (/^Win/u.test(platform)) {
+    return 0.6;
+  }
+  if (/^Mac/u.test(platform)) {
+    return 0.5;
+  }
+  return 0.7;
+}
+
+// src/crypto.js
+async function hashValue(value, runtime = {}) {
+  const text = String(value);
+  const bytes = encodeText(text);
+  const cryptoRef = Object.prototype.hasOwnProperty.call(runtime, "crypto") ? runtime.crypto : getGlobal().crypto || null;
+  if (cryptoRef && cryptoRef.subtle && typeof cryptoRef.subtle.digest === "function") {
+    const digest = await cryptoRef.subtle.digest("SHA-256", bytes);
+    return Object.freeze({ algorithm: "sha256:webcrypto", value: bytesToHex(new Uint8Array(digest)) });
+  }
+  try {
+    const nodeCrypto = await importNodeCrypto(runtime);
+    const value2 = nodeCrypto.createHash("sha256").update(text).digest("hex");
+    return Object.freeze({ algorithm: "sha256:node", value: value2 });
+  } catch (_error) {
+    return Object.freeze({ algorithm: "fnv1a64:fallback", value: fnv1a64Hex(text) });
+  }
+}
+function importNodeCrypto(runtime) {
+  if (runtime && typeof runtime.importNodeCrypto === "function") {
+    return runtime.importNodeCrypto();
+  }
+  return import("node:crypto");
+}
+function encodeText(text) {
+  if (typeof TextEncoder !== "undefined") {
+    return new TextEncoder().encode(text);
+  }
+  const bytes = new Uint8Array(text.length);
+  for (let index = 0; index < text.length; index += 1) {
+    bytes[index] = text.charCodeAt(index) & 255;
+  }
+  return bytes;
+}
+function bytesToHex(bytes) {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+function fnv1a64Hex(text) {
+  let hash = 0xcbf29ce484222325n;
+  const prime = 0x100000001b3n;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= BigInt(text.charCodeAt(index));
+    hash = BigInt.asUintN(64, hash * prime);
+  }
+  return hash.toString(16).padStart(16, "0");
+}
+
+// src/debug.js
+function componentsToDebugString(components) {
+  if (!Array.isArray(components)) {
+    throw new TypeError("components must be an array.");
+  }
+  return components.map((component) => {
+    const payload = component.status === "ok" ? canonicalStringify(component.value) : canonicalStringify(component.error);
+    return `${component.id} [${component.status}] ${payload}`;
+  }).join("\n");
+}
+
+// src/runtime.js
+function createRuntimeContext(options, context = {}) {
+  const globalRef = context.global || getGlobal();
+  return Object.freeze({
+    global: globalRef,
+    window: context.window || globalRef.window || globalRef,
+    document: context.document || globalRef.document || null,
+    navigator: context.navigator || globalRef.navigator || null,
+    screen: context.screen || globalRef.screen || null,
+    crypto: context.crypto || globalRef.crypto || null,
+    consent: context.consent || options.consent || null,
+    now: typeof context.now === "function" ? context.now : options.now
+  });
+}
+function createRequestId(runtime) {
+  const cryptoRef = runtime.crypto;
+  if (cryptoRef && typeof cryptoRef.randomUUID === "function") {
+    return cryptoRef.randomUUID();
+  }
+  return `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
+}
+function hasConsent(consent) {
+  if (consent === true) {
+    return true;
+  }
+  if (!consent || typeof consent !== "object") {
+    return false;
+  }
+  return consent.granted === true;
+}
+function defaultNamespace() {
+  const globalRef = getGlobal();
+  const locationRef = globalRef.location;
+  if (locationRef && locationRef.hostname) {
+    return locationRef.hostname;
+  }
+  return "default";
+}
+function waitForRuntimeIdle(globalRef, delayMs) {
+  const runtimeGlobal = globalRef || getGlobal();
+  const delay = Number.isFinite(delayMs) ? Math.max(0, Number(delayMs)) : 0;
+  if (runtimeGlobal && typeof runtimeGlobal.requestIdleCallback === "function") {
+    return new Promise((resolve) => {
+      runtimeGlobal.requestIdleCallback(() => resolve(), { timeout: Math.max(delay * 2, 1) });
+    });
+  }
+  const setTimer = runtimeGlobal && typeof runtimeGlobal.setTimeout === "function" ? runtimeGlobal.setTimeout.bind(runtimeGlobal) : getGlobal().setTimeout;
+  if (typeof setTimer !== "function" || delay === 0) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => setTimer(resolve, delay));
+}
+
+// src/options.js
+function normalizeClientOptions(options) {
+  const profile = options.profile || "balanced";
+  if (!PROFILE_PRESETS[profile]) {
+    throw new TypeError(`Unknown privacy profile: ${profile}`);
+  }
+  const namespace = String(options.namespace || defaultNamespace());
+  const storage = resolveStorage(options.storage, namespace);
+  return Object.freeze({
+    profile,
+    namespace,
+    salt: String(options.salt || ""),
+    collectorTimeoutMs: Number.isFinite(options.collectorTimeoutMs) ? Math.max(0, Number(options.collectorTimeoutMs)) : DEFAULT_COLLECTOR_TIMEOUT_MS,
+    loadDelayMs: Number.isFinite(options.loadDelayMs) ? Math.max(0, Number(options.loadDelayMs)) : DEFAULT_LOAD_DELAY_MS,
+    storage,
+    storageKey: `fingerprintjs-botblocker:${namespace}:state`,
+    identity: normalizeIdentityOptions(options.identity),
+    consent: options.consent || null,
+    now: typeof options.now === "function" ? options.now : Date.now
+  });
+}
+function normalizeIdentityOptions(value) {
+  const identity = value && typeof value === "object" ? value : {};
+  return Object.freeze({
+    includeNonHashable: Boolean(identity.includeNonHashable),
+    allowCollectors: normalizeStringArray(identity.allowCollectors),
+    denyCollectors: normalizeStringArray(identity.denyCollectors)
+  });
+}
+function normalizeStringArray(value) {
+  return Object.freeze(Array.isArray(value) ? value.map(String) : []);
+}
+
+// src/client.js
+function createClient(options = {}) {
+  const clientOptions = normalizeClientOptions(options);
+  const collectors = normalizeCollectors(options.collectors || createDefaultCollectors());
+  const policy = createPolicy(clientOptions.profile, options.policy || {});
+  const state = { preparedAt: null, preparedValues: /* @__PURE__ */ new Map() };
+  const client = {
+    version: VERSION,
+    profile: clientOptions.profile,
+    collectors: collectors.map((collector) => collector.id),
+    get preparedAt() {
+      return state.preparedAt;
+    },
+    async prepare(context = {}) {
+      const runtime = createRuntimeContext(clientOptions, context);
+      await waitForRuntimeIdle(runtime.global, clientOptions.loadDelayMs);
+      if (policy.requireConsent && !hasConsent(runtime.consent)) {
+        state.preparedValues = /* @__PURE__ */ new Map();
+        state.preparedAt = new Date(runtime.now()).toISOString();
+        return client;
+      }
+      state.preparedValues = await prepareCollectors(collectors, policy, runtime, clientOptions.collectorTimeoutMs);
+      state.preparedAt = new Date(runtime.now()).toISOString();
+      return client;
+    },
+    async get(context = {}) {
+      return identifyWithCollectors(collectors, policy, clientOptions, context, state.preparedValues);
+    },
+    async identify(context = {}) {
+      return identifyWithCollectors(collectors, policy, clientOptions, context, state.preparedValues);
+    },
+    async components(context = {}) {
+      const runtime = createRuntimeContext(clientOptions, context);
+      const collected = await collectPreparedComponents(collectors, policy, runtime, clientOptions.collectorTimeoutMs, state.preparedValues);
+      return collected.map((component) => redactComponent(component, policy));
+    },
+    async debug(context = {}) {
+      const components = await client.components(context);
+      return componentsToDebugString(components);
+    }
+  };
+  return Object.freeze(client);
+}
+async function identifyWithCollectors(collectors, policy, clientOptions, context, preparedValues) {
+  const startedAt = nowMs();
+  const runtime = createRuntimeContext(clientOptions, context);
+  const requestId = createRequestId(runtime);
+  const createdAt = new Date(runtime.now()).toISOString();
+  if (policy.requireConsent && !hasConsent(runtime.consent)) {
+    return createBlockedResult({
+      requestId,
+      createdAt,
+      namespace: clientOptions.namespace,
+      profile: clientOptions.profile,
+      reason: "consent_required",
+      durationMs: elapsedSince(startedAt)
+    });
+  }
+  const components = await collectPreparedComponents(collectors, policy, runtime, clientOptions.collectorTimeoutMs, preparedValues);
+  const identityComponents = selectIdentityComponents(components, clientOptions.identity);
+  const payload = createHashPayload(components, clientOptions.namespace, clientOptions.salt, clientOptions.identity);
+  const confidence = calculateConfidence(components, collectors, policy, clientOptions.identity);
+  const okComponentCount = identityComponents.length;
+  const hash = okComponentCount > 0 ? await hashValue(canonicalStringify(payload), runtime) : null;
+  const visitorId = hash ? hash.value : null;
+  const storage = await updateStorageState(clientOptions.storage, clientOptions.storageKey, visitorId, createdAt);
+  return Object.freeze({
+    visitorId,
+    requestId,
+    namespace: clientOptions.namespace,
+    createdAt,
+    confidence,
+    components: components.map((component) => redactComponent(component, policy)),
+    meta: Object.freeze({
+      version: VERSION,
+      schemaVersion: SCHEMA_VERSION,
+      profile: clientOptions.profile,
+      durationMs: elapsedSince(startedAt),
+      hashAlgorithm: hash ? hash.algorithm : null,
+      identityComponents: identityComponents.map((component) => component.id),
+      reportOnlyComponents: components.filter((component) => component.status === "ok" && !identityComponents.includes(component)).map((component) => component.id),
+      blocked: false,
+      reason: null,
+      storage
+    })
+  });
+}
+function createBlockedResult(details) {
+  return Object.freeze({
+    visitorId: null,
+    requestId: details.requestId,
+    namespace: details.namespace,
+    createdAt: details.createdAt,
+    confidence: Object.freeze({
+      score: 0,
+      level: "low",
+      entropy: 0,
+      collectedWeight: 0,
+      possibleWeight: 0,
+      platformScore: 0,
+      collectionQuality: Object.freeze({
+        score: 0,
+        level: "low",
+        collectedWeight: 0,
+        possibleWeight: 0
+      })
+    }),
+    components: Object.freeze([]),
+    meta: Object.freeze({
+      version: VERSION,
+      schemaVersion: SCHEMA_VERSION,
+      profile: details.profile,
+      durationMs: details.durationMs,
+      hashAlgorithm: null,
+      identityComponents: Object.freeze([]),
+      reportOnlyComponents: Object.freeze([]),
+      blocked: true,
+      reason: details.reason,
+      storage: Object.freeze({ enabled: false, status: "skipped" })
+    })
+  });
+}
+
+// src/hash-components.js
+async function hashComponents(components, options = {}, context = {}) {
+  if (!Array.isArray(components)) {
+    throw new TypeError("components must be an array.");
+  }
+  const namespace = String(options.namespace || "default");
+  const salt = String(options.salt || "");
+  const validComponents = components.filter((component) => component && typeof component === "object");
+  const identityOptions = {
+    includeNonHashable: Boolean(options.includeNonHashable),
+    allowCollectors: options.allowCollectors,
+    denyCollectors: options.denyCollectors
+  };
+  const identityComponents = selectIdentityComponents(validComponents, identityOptions);
+  const okComponentCount = identityComponents.length;
+  if (okComponentCount === 0) {
+    return Object.freeze({ visitorId: null, hashAlgorithm: null, namespace });
+  }
+  const runtime = createRuntimeContext({ consent: null, now: Date.now }, context);
+  const payload = createHashPayload(validComponents, namespace, salt, identityOptions);
+  const hash = await hashValue(canonicalStringify(payload), runtime);
+  return Object.freeze({ visitorId: hash.value, hashAlgorithm: hash.algorithm, namespace });
+}
+
+// src/loader.js
+async function loadClient(options = {}, context = {}) {
+  const client = createClient(options);
+  await client.prepare(context);
+  return client;
+}
+// Annotate the CommonJS export names for ESM import in node:
+0 && (module.exports = {
+  PROFILE_PRESETS,
+  VERSION,
+  canonicalStringify,
+  componentsToDebugString,
   createApiFeaturesCollector,
   createBotDetectionCollector,
   createBrowserCollectorPack,
+  createClient,
   createCollector,
   createCssFeaturesCollector,
   createDefaultCollectors,
-  createNavigatorPropertiesCollector,
   createNetworkConnectionCollector,
   createPerformanceMemoryCollector,
+  createPolicy,
   createPrivacyModeCollector,
-  createWebglPrecisionCollector
-};
+  createWebglPrecisionCollector,
+  hashComponents,
+  hashValue,
+  loadClient
+});

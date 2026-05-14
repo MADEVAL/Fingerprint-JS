@@ -22,7 +22,21 @@ export function normalizeClientOptions(options) {
     loadDelayMs: Number.isFinite(options.loadDelayMs) ? Math.max(0, Number(options.loadDelayMs)) : DEFAULT_LOAD_DELAY_MS,
     storage,
     storageKey: `fingerprintjs-botblocker:${namespace}:state`,
+    identity: normalizeIdentityOptions(options.identity),
     consent: options.consent || null,
     now: typeof options.now === 'function' ? options.now : Date.now
   });
+}
+
+function normalizeIdentityOptions(value) {
+  const identity = value && typeof value === 'object' ? value : {};
+  return Object.freeze({
+    includeNonHashable: Boolean(identity.includeNonHashable),
+    allowCollectors: normalizeStringArray(identity.allowCollectors),
+    denyCollectors: normalizeStringArray(identity.denyCollectors)
+  });
+}
+
+function normalizeStringArray(value) {
+  return Object.freeze(Array.isArray(value) ? value.map(String) : []);
 }

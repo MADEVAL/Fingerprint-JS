@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 
 test('package exports are importable from Node after build', {
@@ -10,8 +11,11 @@ test('package exports are importable from Node after build', {
   const collectors = await import('@botblocker/fingerprintjs/collectors');
   const policy = await import('@botblocker/fingerprintjs/policy');
   const storage = await import('@botblocker/fingerprintjs/storage');
+  const require = createRequire(import.meta.url);
+  const cjs = require('@botblocker/fingerprintjs');
 
   assert.equal(typeof core.createClient, 'function');
+  assert.equal(typeof cjs.createClient, 'function');
   assert.equal(typeof core.createApiFeaturesCollector, 'function');
   assert.equal(typeof core.createCssFeaturesCollector, 'function');
   assert.equal(typeof core.createNetworkConnectionCollector, 'function');
@@ -29,4 +33,5 @@ test('package exports are importable from Node after build', {
   const result = await client.identify({ consent: true });
 
   assert.ok(result.visitorId);
+  assert.deepEqual(result.meta.identityComponents, ['package.signal']);
 });

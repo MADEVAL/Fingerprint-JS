@@ -10,6 +10,7 @@ export function createStorageCapabilitiesCollector() {
     mode: 'passive',
     stability: 'stable',
     weight: 0.65,
+    hashable: false,
     collect(context) {
       const navigatorRef = context.navigator;
       const globalRef = context.global;

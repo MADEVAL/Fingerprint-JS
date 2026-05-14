@@ -2,6 +2,8 @@ import { detectBrowserQuirks, getSuppressionReason, shouldSuppressSignal } from 
 import { createCollector } from './core.js';
 import { checksumString, getWindowRef, safeNumber } from './shared.js';
 
+const DEFAULT_AUDIO_RENDER_TIMEOUT_MS = 1500;
+
 export function createAudioCollector() {
   return createCollector({
     id: 'audio.fingerprint',
@@ -79,10 +81,10 @@ async function collectAudioFingerprint(context) {
     return { status: 'unsupported' };
   }
 
-  return renderAudio(OfflineAudioContext);
+  return renderAudio(OfflineAudioContext, context);
 }
 
-async function renderAudio(OfflineAudioContext) {
+async function renderAudio(OfflineAudioContext, context) {
   const length = 4096;
   const sampleRate = 44100;
   const audioContext = new OfflineAudioContext(1, length, sampleRate);
@@ -115,13 +117,19 @@ async function renderAudio(OfflineAudioContext) {
     oscillator.stop(0.05);
   }
 
-  const rendered = await resolveRenderedBuffer(audioContext);
+  const renderedResult = await resolveRenderedBuffer(audioContext, context);
+  if (!renderedResult.ok) {
+    return renderedResult.value;
+  }
+
+  const rendered = renderedResult.buffer;
   const samples = rendered && typeof rendered.getChannelData === 'function' ? rendered.getChannelData(0) : new Float32Array(0);
 
   return {
     status: 'ok',
     sampleRate: safeNumber(rendered && rendered.sampleRate) || sampleRate,
     length: safeNumber(rendered && rendered.length) || length,
+    renderAttempts: renderedResult.attempts,
     checksum: checksumSamples(samples)
   };
 }
@@ -140,15 +148,79 @@ function setAudioParam(param, value, currentTime) {
   }
 }
 
-function resolveRenderedBuffer(audioContext) {
-  const rendered = audioContext.startRendering();
-  if (rendered && typeof rendered.then === 'function') {
-    return rendered;
+async function resolveRenderedBuffer(audioContext, context) {
+  const maxAttempts = 2;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const buffer = await startRenderingOnce(audioContext, context);
+      return Object.freeze({ ok: true, buffer, attempts: attempt });
+    } catch (error) {
+      lastError = error;
+      if (!shouldRetryAudioRender(audioContext, attempt, maxAttempts)) {
+        break;
+      }
+      await Promise.resolve();
+    }
   }
 
-  return new Promise((resolve, reject) => {
-    audioContext.oncomplete = (event) => resolve(event.renderedBuffer);
+  return Object.freeze({
+    ok: false,
+    value: Object.freeze({
+      status: audioContext.state === 'suspended' ? 'suspended' : lastError && lastError.code === 'audio_render_timeout' ? 'timeout' : 'error',
+      message: lastError && lastError.message ? String(lastError.message) : 'audio_render_failed'
+    })
+  });
+}
+
+function startRenderingOnce(audioContext, context) {
+  const renderedPromise = new Promise((resolve, reject) => {
+    audioContext.oncomplete = (event) => resolve(event && event.renderedBuffer);
     audioContext.onerror = reject;
+  });
+
+  const rendered = audioContext.startRendering();
+  const pending = rendered && typeof rendered.then === 'function' ? rendered : renderedPromise;
+  return withAudioTimeout(pending, context);
+}
+
+function shouldRetryAudioRender(audioContext, attempt, maxAttempts) {
+  return attempt < maxAttempts && audioContext.state === 'suspended';
+}
+
+function withAudioTimeout(promise, context) {
+  const runtimeTimers = getTimerFns(context && (context.global || context.window));
+  const fallbackTimers = getTimerFns(globalThis);
+  const timers = runtimeTimers || fallbackTimers;
+  const timeoutMs = Number.isFinite(context && context.audioRenderTimeoutMs)
+    ? Math.max(0, Number(context.audioRenderTimeoutMs))
+    : DEFAULT_AUDIO_RENDER_TIMEOUT_MS;
+
+  if (!timeoutMs || !timers) {
+    return promise;
+  }
+
+  let timeoutId;
+  const timeout = new Promise((_resolve, reject) => {
+    timeoutId = timers.set(() => {
+      const error = new Error('audio_render_timeout');
+      error.code = 'audio_render_timeout';
+      reject(error);
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => timers.clear(timeoutId));
+}
+
+function getTimerFns(ref) {
+  if (!ref || typeof ref.setTimeout !== 'function' || typeof ref.clearTimeout !== 'function') {
+    return null;
+  }
+
+  return Object.freeze({
+    set: ref.setTimeout.bind(ref),
+    clear: ref.clearTimeout.bind(ref)
   });
 }
 

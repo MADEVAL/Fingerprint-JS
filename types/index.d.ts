@@ -28,6 +28,8 @@ export interface CollectorDefinition<T = unknown, Prepared = unknown> {
   mode?: CollectorMode;
   stability?: 'stable' | 'volatile' | string;
   weight?: number;
+  hashable?: boolean;
+  includeInIdentity?: boolean;
   prepare?(context: CollectorContext): Prepared | Promise<Prepared>;
   collect(context: CollectorContext, prepared?: Prepared): T | Promise<T>;
 }
@@ -40,6 +42,7 @@ export interface Collector<T = unknown, Prepared = unknown> {
   mode: CollectorMode;
   stability: string;
   weight: number;
+  hashable: boolean;
   prepare: null | ((context: CollectorContext) => Prepared | Promise<Prepared>);
   collect(context: CollectorContext, prepared?: Prepared): T | Promise<T>;
 }
@@ -70,9 +73,16 @@ export interface ClientOptions {
   loadDelayMs?: number;
   collectors?: Array<CollectorDefinition | Collector>;
   policy?: PolicyOptions;
+  identity?: IdentityOptions;
   storage?: false | 'local' | StorageAdapter;
   consent?: boolean | ConsentState;
   now?: () => number;
+}
+
+export interface IdentityOptions {
+  includeNonHashable?: boolean;
+  allowCollectors?: string[];
+  denyCollectors?: string[];
 }
 
 export interface IdentifyContext extends Partial<CollectorContext> {
@@ -87,6 +97,7 @@ export interface ComponentResult {
   mode: CollectorMode;
   stability: string;
   weight: number;
+  hashable: boolean;
   status: ComponentStatus;
   value: unknown;
   durationMs: number;
@@ -99,6 +110,13 @@ export interface ConfidenceResult {
   entropy: number;
   collectedWeight: number;
   possibleWeight: number;
+  platformScore: number;
+  collectionQuality: {
+    score: number;
+    level: 'low' | 'medium' | 'high';
+    collectedWeight: number;
+    possibleWeight: number;
+  };
 }
 
 export interface IdentifyResult {
@@ -114,6 +132,8 @@ export interface IdentifyResult {
     profile: PrivacyProfile;
     durationMs: number;
     hashAlgorithm: string | null;
+    identityComponents: string[];
+    reportOnlyComponents: string[];
     blocked: boolean;
     reason: string | null;
     storage: Record<string, unknown>;
@@ -123,6 +143,9 @@ export interface IdentifyResult {
 export interface HashComponentsOptions {
   namespace?: string;
   salt?: string;
+  includeNonHashable?: boolean;
+  allowCollectors?: string[];
+  denyCollectors?: string[];
 }
 
 export interface HashComponentsResult {

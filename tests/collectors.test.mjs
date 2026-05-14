@@ -715,6 +715,13 @@ test('screen frame and media preferences collectors handle stable and suppressed
   const screenFrame = collector('screen.frame');
 
   assert.equal(screenFrame.collect({ screen: null }), null);
+  const zeroWithoutCache = screenFrame.collect({
+    global: {},
+    window: { outerWidth: 500, outerHeight: 400, innerWidth: 500, innerHeight: 400 },
+    screen: { width: 800, height: 600, availWidth: 800, availHeight: 600 },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36', platform: 'Win32' }
+  });
+  assert.equal(zeroWithoutCache.cached, false);
   const stableFrame = screenFrame.collect({
     global: {},
     window: { outerWidth: 1000, outerHeight: 800, innerWidth: 980, innerHeight: 760, screenX: 5, screenY: 7 },
@@ -742,6 +749,60 @@ test('screen frame and media preferences collectors handle stable and suppressed
   });
   assert.equal(cachedFrame.cached, true);
   assert.equal(cachedFrame.frameWidth, 20);
+
+  const watchedEvents = {};
+  const watchedContext = {
+    global: {},
+    window: {
+      outerWidth: 1200.4,
+      outerHeight: 900.4,
+      innerWidth: 1160.1,
+      innerHeight: 840.2,
+      screenX: 3.6,
+      screenY: 4.4,
+      addEventListener(name, handler) {
+        watchedEvents[name] = handler;
+      }
+    },
+    screen: { width: 1440, height: 960, availWidth: 1400, availHeight: 900 },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36', platform: 'Win32' }
+  };
+  const watchedFrame = screenFrame.collect(watchedContext);
+  assert.equal(watchedFrame.rounded, true);
+  watchedEvents.resize();
+  watchedContext.window.outerWidth = 1160;
+  watchedContext.window.outerHeight = 840;
+  watchedContext.screen.availWidth = 1440;
+  watchedContext.screen.availHeight = 960;
+  watchedEvents.resize();
+  watchedContext.window.outerWidth = 1200;
+  watchedContext.window.outerHeight = 900;
+  watchedContext.window.innerWidth = 1160;
+  watchedContext.window.innerHeight = 840;
+  watchedContext.screen.availWidth = 1400;
+  watchedContext.screen.availHeight = 900;
+  watchedContext.document = { fullscreenElement: {} };
+  watchedEvents.orientationchange();
+  delete watchedContext.document;
+  delete watchedContext.window.screenX;
+  delete watchedContext.window.screenY;
+  watchedContext.window.screenLeft = 6;
+  watchedContext.window.screenTop = 8;
+  delete watchedContext.window.outerWidth;
+  delete watchedContext.window.outerHeight;
+  delete watchedContext.screen.width;
+  delete watchedContext.screen.height;
+  delete watchedContext.screen.availWidth;
+  delete watchedContext.screen.availHeight;
+  watchedEvents.resize();
+  const watchedCachedFrame = screenFrame.collect({
+    global: {},
+    window: { outerWidth: 800, outerHeight: 600, innerWidth: 800, innerHeight: 600 },
+    screen: { width: 1440, height: 960, availWidth: 1440, availHeight: 960 },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36', platform: 'Win32' }
+  });
+  assert.equal(watchedCachedFrame.source, 'cache');
+  assert.equal(watchedCachedFrame.frameWidth, 40);
 
   const fullscreenFrame = screenFrame.collect({
     window: { outerWidth: 980, outerHeight: 760, innerWidth: 980, innerHeight: 760, fullScreen: true },
@@ -816,6 +877,17 @@ test('screen frame and media preferences collectors handle stable and suppressed
   assert.equal(emptyPreferences.forcedColors, null);
   assert.equal(emptyPreferences.monochrome, null);
   assert.equal(emptyPreferences.dynamicRange, 'standard');
+
+  const inactivePreferences = media.collect({ window: { matchMedia: () => ({ matches: false }) } });
+  assert.equal(inactivePreferences.invertedColors, null);
+  assert.equal(inactivePreferences.prefersContrast, null);
+  assert.equal(inactivePreferences.prefersReducedMotion, null);
+  assert.equal(inactivePreferences.dynamicRange, null);
+
+  const activeForcedColors = media.collect({
+    window: { matchMedia: (query) => ({ matches: query === '(forced-colors: active)' }) }
+  });
+  assert.equal(activeForcedColors.forcedColors, true);
 });
 
 test('hardware, touch, architecture, and math collectors return stable values', () => {
@@ -935,8 +1007,41 @@ test('WebGL collector handles unavailable, available, and throwing parameter pat
   assert.equal(value.renderer, 'Renderer');
   assert.equal(value.version, 1);
   assert.equal(value.shadingLanguageVersion, true);
+  assert.equal(value.contextAttributes, null);
   assert.equal(value.unmaskedVendor, null);
   assert.equal(value.unmaskedRenderer, null);
+
+  const withAttributes = webgl.collect({
+    document: {
+      createElement: () => ({
+        getContext: () => ({
+          VENDOR: 1,
+          RENDERER: 2,
+          VERSION: 3,
+          SHADING_LANGUAGE_VERSION: 4,
+          drawingBufferWidth: 300,
+          drawingBufferHeight: 150,
+          getContextAttributes: () => ({ alpha: true, antialias: false, depth: 'bad', powerPreference: 'high-performance' }),
+          getExtension: () => null,
+          getParameter: () => 'x'
+        })
+      })
+    }
+  });
+  assert.equal(withAttributes.contextAttributes.alpha, true);
+  assert.equal(withAttributes.contextAttributes.depth, null);
+  assert.equal(withAttributes.contextAttributes.powerPreference, 'high-performance');
+  assert.equal(withAttributes.drawingBufferWidth, 300);
+
+  const badAttributes = webgl.collect({
+    document: { createElement: () => ({ getContext: () => ({ getContextAttributes: () => null, getParameter: () => 'x' }) }) }
+  });
+  assert.equal(badAttributes.contextAttributes, null);
+
+  const throwingAttributes = webgl.collect({
+    document: { createElement: () => ({ getContext: () => ({ getContextAttributes: () => { throw new Error('blocked attributes'); }, getParameter: () => 'x' }) }) }
+  });
+  assert.equal(throwingAttributes.contextAttributes, null);
 
   const withoutDebugInfo = webgl.collect({
     document: {
@@ -953,6 +1058,26 @@ test('WebGL collector handles unavailable, available, and throwing parameter pat
   });
   assert.equal(withoutDebugInfo.unmaskedVendor, null);
   assert.equal(withoutDebugInfo.unmaskedRenderer, null);
+
+  const withDebugValues = webgl.collect({
+    document: {
+      createElement: () => ({
+        getContext: () => ({
+          VENDOR: 1,
+          RENDERER: 2,
+          VERSION: 3,
+          SHADING_LANGUAGE_VERSION: 4,
+          drawingBufferWidth: Number.NaN,
+          getContextAttributes: () => ({ preserveDrawingBuffer: true, powerPreference: 10 }),
+          getExtension: () => ({ UNMASKED_VENDOR_WEBGL: 5, UNMASKED_RENDERER_WEBGL: 6 }),
+          getParameter: (parameter) => (parameter === 5 ? 'GPU Vendor' : parameter === 6 ? 'GPU Renderer' : null)
+        })
+      })
+    }
+  });
+  assert.equal(withDebugValues.unmaskedVendor, 'GPU Vendor');
+  assert.equal(withDebugValues.unmaskedRenderer, 'GPU Renderer');
+  assert.equal(withDebugValues.contextAttributes.powerPreference, null);
 });
 
 test('WebGL extensions collector captures sorted extensions and limits', () => {
@@ -965,13 +1090,21 @@ test('WebGL extensions collector captures sorted extensions and limits', () => {
     MAX_RENDERBUFFER_SIZE: 3,
     ALIASED_LINE_WIDTH_RANGE: 4,
     ALIASED_POINT_SIZE_RANGE: 5,
-    getSupportedExtensions: () => ['Z_EXT', 'A_EXT'],
+    MAX_VIEWPORT_DIMS: 6,
+    MAX_CUBE_MAP_TEXTURE_SIZE: 7,
+    MAX_VERTEX_ATTRIBS: 8,
+    MAX_VERTEX_TEXTURE_IMAGE_UNITS: 9,
+    MAX_VARYING_VECTORS: 10,
+    getSupportedExtensions: () => ['Z_EXT', 'WEBGL_debug_shaders', 'A_EXT'],
     getParameter(parameter) {
       if (parameter === 4) {
         return new Float32Array([1, 4]);
       }
       if (parameter === 5) {
         return [2, Number.NaN];
+      }
+      if (parameter === 6) {
+        return new Int32Array([1024, 768]);
       }
       return parameter * 10;
     }
@@ -984,7 +1117,10 @@ test('WebGL extensions collector captures sorted extensions and limits', () => {
   });
 
   assert.deepEqual(value.extensions, ['A_EXT', 'Z_EXT']);
+  assert.deepEqual(value.omittedExtensions, ['WEBGL_debug_shaders']);
   assert.equal(value.maxTextureSize, 10);
+  assert.equal(value.maxCubeMapTextureSize, 70);
+  assert.deepEqual(value.maxViewportDims, [1024, 768]);
   assert.deepEqual(value.aliasedLineWidthRange, [1, 4]);
   assert.deepEqual(value.aliasedPointSizeRange, [2, null]);
 
@@ -1041,7 +1177,9 @@ test('canvas collector handles unavailable and available canvas paths', () => {
 
   assert.equal(canvas.collect({ document: null }), null);
   assert.equal(canvas.collect({ document: {} }), null);
+  assert.equal(canvas.collect({ document: { createElement: () => ({}) } }), null);
   assert.equal(canvas.collect({ document: { createElement: () => ({ getContext: () => null }) } }), null);
+  assert.equal(canvas.collect({ document: { createElement: () => ({ getContext: () => ({}) }) } }), null);
   assert.equal(canvas.collect({
     document: { createElement: () => ({ getContext: () => ({}) }) },
     navigator: { userAgent: 'Firefox/143.0', hardwareConcurrency: 2 },
@@ -1150,6 +1288,30 @@ test('canvas collector handles unavailable and available canvas paths', () => {
   });
   assert.equal(readFailureWithoutMessage.geometry.reason, 'canvas_read_failed');
 
+  let noisyRead = 0;
+  const noisyText = canvas.collect({
+    document: {
+      createElement: () => ({
+        getContext: () => ({
+          set fillStyle(_value) {},
+          set globalCompositeOperation(_value) {},
+          set textBaseline(_value) {},
+          set font(_value) {},
+          fillRect() {},
+          beginPath() {},
+          arc() {},
+          closePath() {},
+          fill() {},
+          fillText() {},
+          rect() {},
+          isPointInPath: () => true
+        }),
+        toDataURL: () => `data-${noisyRead += 1}`
+      })
+    }
+  });
+  assert.equal(noisyText.text.reason, 'canvas_noise_detected');
+
   const noWinding = canvas.collect({
     document: {
       createElement: () => ({
@@ -1240,6 +1402,14 @@ test('font collectors use font API and layout fallback', () => {
 
   const preparedPreferences = preferences.prepare({ document: createFakeDocument() });
   assert.equal(preferences.collect({}, preparedPreferences), preparedPreferences);
+  const scaledPreferences = preferences.collect({ document: createFakeDocument(), global: { devicePixelRatio: 2 } });
+  assert.equal(scaledPreferences.devicePixelRatio, 2);
+  assert.equal(typeof scaledPreferences.presets.math.serif, 'number');
+  const invalidRatioPreferences = preferences.collect({ document: createFakeDocument(), global: { devicePixelRatio: -1 } });
+  assert.equal(invalidRatioPreferences.devicePixelRatio, 1);
+  const nullBoxPreferences = preferences.collect({ document: createFakeDocument({ sparseBoxes: true }) });
+  assert.equal(nullBoxPreferences.monospace.width, null);
+  assert.equal(nullBoxPreferences.presets.defaultText.serif, null);
 });
 
 test('audio collectors handle unsupported, suppressed, latency, promise, and event rendering paths', async () => {
@@ -1312,6 +1482,13 @@ test('audio collectors handle unsupported, suppressed, latency, promise, and eve
   });
   assert.equal(eventValue.status, 'ok');
 
+  const eventWithoutPayload = await audio.collect({
+    window: { OfflineAudioContext: createEventWithoutPayloadOfflineAudioContext() },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36' },
+    audioRenderTimeoutMs: 0
+  });
+  assert.equal(eventWithoutPayload.sampleRate, 44100);
+
   const sparseRendered = await audio.collect({
     window: { webkitOfflineAudioContext: createSparseOfflineAudioContext() },
     navigator: { userAgent: 'Chrome/120 Safari/537.36' }
@@ -1325,6 +1502,107 @@ test('audio collectors handle unsupported, suppressed, latency, promise, and eve
     navigator: { userAgent: 'Chrome/120 Safari/537.36' }
   });
   assert.equal(noCompressor.status, 'ok');
+
+  const retryValue = await audio.collect({
+    window: { OfflineAudioContext: createRetryOfflineAudioContext() },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36' },
+    audioRenderTimeoutMs: 0
+  });
+  assert.equal(retryValue.renderAttempts, 2);
+
+  const renderError = await audio.collect({
+    window: { OfflineAudioContext: createRejectingOfflineAudioContext('render failed') },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36' },
+    audioRenderTimeoutMs: 0
+  });
+  assert.equal(renderError.status, 'error');
+
+  const eventError = await audio.collect({
+    window: { OfflineAudioContext: createEventErrorOfflineAudioContext() },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36' },
+    audioRenderTimeoutMs: 0
+  });
+  assert.equal(eventError.status, 'error');
+
+  const renderTimeout = await audio.collect({
+    window: { OfflineAudioContext: createHangingOfflineAudioContext('running') },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36' },
+    audioRenderTimeoutMs: 1
+  });
+  assert.equal(renderTimeout.status, 'timeout');
+
+  const suspendedTimeout = await audio.collect({
+    window: { OfflineAudioContext: createHangingOfflineAudioContext('suspended') },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36' },
+    audioRenderTimeoutMs: 1
+  });
+  assert.equal(suspendedTimeout.status, 'suspended');
+
+  const windowTimerCalls = [];
+  const runtimeTimerValue = await audio.collect({
+    window: {
+      OfflineAudioContext: createFakeOfflineAudioContext(true, true),
+      setTimeout(callback, timeoutMs) {
+        windowTimerCalls.push(timeoutMs);
+        return globalThis.setTimeout(callback, timeoutMs);
+      },
+      clearTimeout(timeoutId) {
+        windowTimerCalls.push('clear');
+        return globalThis.clearTimeout(timeoutId);
+      }
+    },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36' },
+    audioRenderTimeoutMs: 5
+  });
+  assert.equal(runtimeTimerValue.status, 'ok');
+  assert.ok(windowTimerCalls.includes('clear'));
+
+  const partialTimerValue = await audio.collect({
+    window: {
+      OfflineAudioContext: createFakeOfflineAudioContext(true, true),
+      setTimeout(callback, timeoutMs) {
+        return globalThis.setTimeout(callback, timeoutMs);
+      }
+    },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36' },
+    audioRenderTimeoutMs: 5
+  });
+  assert.equal(partialTimerValue.status, 'ok');
+
+  const partialClearTimerValue = await audio.collect({
+    window: {
+      OfflineAudioContext: createFakeOfflineAudioContext(true, true),
+      clearTimeout(timeoutId) {
+        return globalThis.clearTimeout(timeoutId);
+      }
+    },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36' },
+    audioRenderTimeoutMs: 5
+  });
+  assert.equal(partialClearTimerValue.status, 'ok');
+
+  const timerDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'setTimeout');
+  const clearTimerDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'clearTimeout');
+  try {
+    Object.defineProperty(globalThis, 'setTimeout', { configurable: true, value: undefined });
+    Object.defineProperty(globalThis, 'clearTimeout', { configurable: true, value: undefined });
+    const noTimerValue = await audio.collect({
+      window: { OfflineAudioContext: createFakeOfflineAudioContext(true, true) },
+      navigator: { userAgent: 'Chrome/120 Safari/537.36' },
+      audioRenderTimeoutMs: 5
+    });
+    assert.equal(noTimerValue.status, 'ok');
+  } finally {
+    restoreGlobalProperty('setTimeout', timerDescriptor);
+    restoreGlobalProperty('clearTimeout', clearTimerDescriptor);
+  }
+
+  const nonErrorRejection = await audio.collect({
+    window: { OfflineAudioContext: createRejectingOfflineAudioContext(null) },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36' },
+    audioRenderTimeoutMs: 0
+  });
+  assert.equal(nonErrorRejection.message, 'audio_render_failed');
 
   const unsupported = await audio.collect({
     window: { OfflineAudioContext: class { startRendering() {} } },
@@ -1472,11 +1750,12 @@ function createFakeDocument(options = {}) {
   const hiddenClass = options.hiddenClass || '';
   const zeroHeightClass = options.zeroHeightClass || '';
   const zeroWidthClass = options.zeroWidthClass || '';
+  const sparseBoxes = Boolean(options.sparseBoxes);
   const iframeDocument = options.iframeDocument || null;
   const iframeWindowDocument = options.iframeWindowDocument || null;
   const frameMode = options.frameMode || 'normal';
   const documentRef = {
-    body: createFakeElement('body', hiddenClass, zeroHeightClass, zeroWidthClass),
+    body: createFakeElement('body', hiddenClass, zeroHeightClass, zeroWidthClass, sparseBoxes),
     createElement(tagName) {
       if (tagName === 'iframe' && frameMode === 'none') {
         return null;
@@ -1510,14 +1789,14 @@ function createFakeDocument(options = {}) {
         };
       }
 
-      return createFakeElement(tagName, hiddenClass, zeroHeightClass, zeroWidthClass);
+      return createFakeElement(tagName, hiddenClass, zeroHeightClass, zeroWidthClass, sparseBoxes);
     }
   };
 
   return documentRef;
 }
 
-function createFakeElement(tagName, hiddenClass, zeroHeightClass, zeroWidthClass) {
+function createFakeElement(tagName, hiddenClass, zeroHeightClass, zeroWidthClass, sparseBoxes = false) {
   return {
     tagName,
     children: [],
@@ -1539,6 +1818,9 @@ function createFakeElement(tagName, hiddenClass, zeroHeightClass, zeroWidthClass
       return this.className.includes(hiddenClass) && hiddenClass ? null : {};
     },
     get offsetWidth() {
+      if (sparseBoxes && tagName === 'span') {
+        return Number.NaN;
+      }
       if (this.className.includes(hiddenClass) && hiddenClass) {
         return 0;
       }
@@ -1549,6 +1831,9 @@ function createFakeElement(tagName, hiddenClass, zeroHeightClass, zeroWidthClass
       return fontFamily.includes('Arial') || fontFamily.includes('Menlo') ? 120 : 100;
     },
     get offsetHeight() {
+      if (sparseBoxes && tagName === 'span') {
+        return Number.NaN;
+      }
       if (this.className.includes(hiddenClass) && hiddenClass) {
         return 0;
       }
@@ -1729,6 +2014,141 @@ function createNoCompressorOfflineAudioContext() {
         length: 2,
         getChannelData: () => new Float32Array([0, 1])
       });
+    }
+  };
+}
+
+function createRetryOfflineAudioContext() {
+  return class RetryOfflineAudioContext {
+    constructor() {
+      this.currentTime = 0;
+      this.destination = {};
+      this.state = 'suspended';
+      this.attempts = 0;
+    }
+
+    createOscillator() {
+      return {
+        frequency: { setValueAtTime() {} },
+        connect() {},
+        start() {},
+        stop() {}
+      };
+    }
+
+    createDynamicsCompressor() {
+      return {
+        threshold: { setValueAtTime() {} },
+        knee: { setValueAtTime() {} },
+        ratio: { setValueAtTime() {} },
+        attack: { setValueAtTime() {} },
+        release: { setValueAtTime() {} },
+        connect() {}
+      };
+    }
+
+    startRendering() {
+      this.attempts += 1;
+      if (this.attempts === 1) {
+        return Promise.reject(new Error('audio suspended'));
+      }
+
+      this.state = 'running';
+      return Promise.resolve({
+        sampleRate: 44100,
+        length: 4,
+        getChannelData: () => new Float32Array([0.1, 0.2])
+      });
+    }
+  };
+}
+
+function createRejectingOfflineAudioContext(message) {
+  return class RejectingOfflineAudioContext {
+    constructor() {
+      this.currentTime = 0;
+      this.destination = {};
+      this.state = 'running';
+    }
+
+    createOscillator() {
+      return { frequency: { setValueAtTime() {} }, connect() {}, start() {}, stop() {} };
+    }
+
+    createDynamicsCompressor() {
+      return null;
+    }
+
+    startRendering() {
+      return Promise.reject(message === null ? null : new Error(message));
+    }
+  };
+}
+
+function createEventErrorOfflineAudioContext() {
+  return class EventErrorOfflineAudioContext {
+    constructor() {
+      this.currentTime = 0;
+      this.destination = {};
+      this.state = 'running';
+    }
+
+    createOscillator() {
+      return { frequency: { setValueAtTime() {} }, connect() {}, start() {}, stop() {} };
+    }
+
+    createDynamicsCompressor() {
+      return null;
+    }
+
+    startRendering() {
+      queueMicrotask(() => this.onerror(new Error('event render failed')));
+      return undefined;
+    }
+  };
+}
+
+function createEventWithoutPayloadOfflineAudioContext() {
+  return class EventWithoutPayloadOfflineAudioContext {
+    constructor() {
+      this.currentTime = 0;
+      this.destination = {};
+      this.state = 'running';
+    }
+
+    createOscillator() {
+      return { frequency: { setValueAtTime() {} }, connect() {}, start() {}, stop() {} };
+    }
+
+    createDynamicsCompressor() {
+      return null;
+    }
+
+    startRendering() {
+      queueMicrotask(() => this.oncomplete(null));
+      return undefined;
+    }
+  };
+}
+
+function createHangingOfflineAudioContext(state) {
+  return class HangingOfflineAudioContext {
+    constructor() {
+      this.currentTime = 0;
+      this.destination = {};
+      this.state = state;
+    }
+
+    createOscillator() {
+      return { frequency: { setValueAtTime() {} }, connect() {}, start() {}, stop() {} };
+    }
+
+    createDynamicsCompressor() {
+      return null;
+    }
+
+    startRendering() {
+      return new Promise(() => {});
     }
   };
 }

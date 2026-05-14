@@ -4,18 +4,39 @@ import { checksumString, safeNumber } from './shared.js';
 const FONT_CANDIDATES = Object.freeze([
   'Arial',
   'Arial Unicode MS',
+  'Avenir Next',
+  'Book Antiqua',
   'Calibri',
   'Cambria',
+  'Candara',
+  'Comic Sans MS',
   'Courier New',
+  'DejaVu Sans',
   'Georgia',
   'Helvetica Neue',
+  'Lucida Console',
+  'Lucida Sans Unicode',
   'Menlo',
+  'Monaco',
+  'Noto Color Emoji',
+  'Palatino',
   'Roboto',
+  'San Francisco',
   'Segoe UI',
-  'Times New Roman'
+  'Tahoma',
+  'Times New Roman',
+  'Trebuchet MS',
+  'Ubuntu',
+  'Verdana'
 ]);
 
 const BASE_FONTS = Object.freeze(['monospace', 'sans-serif', 'serif']);
+const PREFERENCE_SAMPLES = Object.freeze({
+  defaultText: 'mmmmmmmmmmlli',
+  denseText: 'mmMwWLliI0O&1',
+  emoji: 'emoji',
+  math: 'math'
+});
 
 export function createFontsCollector() {
   return createCollector({
@@ -82,19 +103,21 @@ function collectFontPreferences(context) {
     return null;
   }
 
+  const devicePixelRatio = normalizeDevicePixelRatio(context);
+
   return withMeasurementDocument(documentRef, (measurementDocument) => {
     const container = createContainer(measurementDocument);
     try {
       measurementDocument.body.appendChild(container);
       const sizes = {};
       for (const family of BASE_FONTS) {
-        const element = createSpan(measurementDocument, family, 'mmmmmmmmmmlli', '72px');
+        const element = createSpan(measurementDocument, family, PREFERENCE_SAMPLES.defaultText, '72px');
         container.appendChild(element);
-        sizes[family] = {
-          width: safeNumber(element.offsetWidth),
-          height: safeNumber(element.offsetHeight)
-        };
+        sizes[family] = readBox(element, devicePixelRatio);
       }
+
+      sizes.presets = measurePreferencePresets(measurementDocument, container, devicePixelRatio);
+      sizes.devicePixelRatio = devicePixelRatio;
 
       return sizes;
     } finally {
@@ -127,7 +150,7 @@ function measureFontsInDocument(documentRef) {
     documentRef.body.appendChild(container);
     const baseMeasurements = {};
     for (const baseFont of BASE_FONTS) {
-      const base = createSpan(documentRef, baseFont, 'mmMwWLliI0O&1', '48px');
+      const base = createSpan(documentRef, baseFont, PREFERENCE_SAMPLES.denseText, '48px');
       container.appendChild(base);
       baseMeasurements[baseFont] = readBox(base);
     }
@@ -186,10 +209,10 @@ function createMeasurementFrame(documentRef) {
 
 function isFontAvailable(documentRef, container, font, baseMeasurements) {
   for (const baseFont of BASE_FONTS) {
-    const span = createSpan(documentRef, `"${font}",${baseFont}`, 'mmMwWLliI0O&1', '48px');
+    const span = createSpan(documentRef, `"${font}",${baseFont}`, PREFERENCE_SAMPLES.denseText, '48px');
     container.appendChild(span);
     const box = readBox(span);
-    if (box.width !== baseMeasurements[baseFont].width || box.height !== baseMeasurements[baseFont].height) {
+    if (box.width !== baseMeasurements[baseFont].width) {
       return true;
     }
   }
@@ -220,11 +243,33 @@ function createSpan(documentRef, fontFamily, text, fontSize) {
   return span;
 }
 
-function readBox(element) {
+function readBox(element, devicePixelRatio = 1) {
+  const width = safeNumber(element.offsetWidth);
+  const height = safeNumber(element.offsetHeight);
   return {
-    width: safeNumber(element.offsetWidth),
-    height: safeNumber(element.offsetHeight)
+    width,
+    height,
+    normalizedWidth: width === null ? null : Math.round((width / devicePixelRatio) * 100) / 100
   };
+}
+
+function measurePreferencePresets(documentRef, container, devicePixelRatio) {
+  const presets = {};
+  for (const [name, sample] of Object.entries(PREFERENCE_SAMPLES)) {
+    presets[name] = {};
+    for (const family of BASE_FONTS) {
+      const element = createSpan(documentRef, family, sample, name === 'emoji' ? '48px' : '64px');
+      container.appendChild(element);
+      presets[name][family] = readBox(element, devicePixelRatio).normalizedWidth;
+    }
+  }
+
+  return presets;
+}
+
+function normalizeDevicePixelRatio(context) {
+  const ratio = safeNumber(context && context.global && context.global.devicePixelRatio);
+  return ratio && ratio > 0 ? ratio : 1;
 }
 
 function removeNode(node) {

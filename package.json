@@ -5,27 +5,31 @@
   "productName": "FingerprintJS by BotBlocker",
   "type": "module",
   "license": "MIT",
-  "main": "./dist/index.mjs",
+  "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.mjs"
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
     },
     "./browser": "./dist/browser/fingerprintjs-botblocker.js",
     "./browser.min": "./dist/browser/fingerprintjs-botblocker.min.js",
     "./collectors": {
       "types": "./dist/collectors.d.ts",
-      "import": "./dist/collectors.mjs"
+      "import": "./dist/collectors.mjs",
+      "require": "./dist/collectors.cjs"
     },
     "./policy": {
       "types": "./dist/policy.d.ts",
-      "import": "./dist/policy.mjs"
+      "import": "./dist/policy.mjs",
+      "require": "./dist/policy.cjs"
     },
     "./storage": {
       "types": "./dist/storage.d.ts",
-      "import": "./dist/storage.mjs"
+      "import": "./dist/storage.mjs",
+      "require": "./dist/storage.cjs"
     },
     "./package.json": "./package.json"
   },

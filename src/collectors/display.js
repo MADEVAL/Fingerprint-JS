@@ -3,6 +3,7 @@ import { createCollector } from './core.js';
 import { getMatchMedia, getWindowRef, safeNumber } from './shared.js';
 
 let cachedScreenFrame = null;
+let screenFrameWatcherBound = false;
 
 export function createScreenCollector() {
   return createCollector({
@@ -58,27 +59,31 @@ export function createScreenFrameCollector() {
         return null;
       }
 
-      const outerWidth = safeNumber(windowRef.outerWidth);
-      const outerHeight = safeNumber(windowRef.outerHeight);
-      const innerWidth = safeNumber(windowRef.innerWidth);
-      const innerHeight = safeNumber(windowRef.innerHeight);
+      ensureScreenFrameWatcher(context);
+
+      const outerWidth = roundDimension(windowRef.outerWidth);
+      const outerHeight = roundDimension(windowRef.outerHeight);
+      const innerWidth = roundDimension(windowRef.innerWidth);
+      const innerHeight = roundDimension(windowRef.innerHeight);
 
       const frame = {
         outerWidth,
         outerHeight,
         innerWidth,
         innerHeight,
-        left: safeNumber(windowRef.screenX ?? windowRef.screenLeft),
-        top: safeNumber(windowRef.screenY ?? windowRef.screenTop),
+        left: roundDimension(windowRef.screenX ?? windowRef.screenLeft),
+        top: roundDimension(windowRef.screenY ?? windowRef.screenTop),
         frameWidth: outerWidth !== null && innerWidth !== null ? Math.max(0, outerWidth - innerWidth) : null,
         frameHeight: outerHeight !== null && innerHeight !== null ? Math.max(0, outerHeight - innerHeight) : null,
-        availDeltaWidth: safeNumber(screenRef.width) !== null && safeNumber(screenRef.availWidth) !== null
+        availDeltaWidth: roundDimension(screenRef.width) !== null && roundDimension(screenRef.availWidth) !== null
           ? Math.max(0, Number(screenRef.width) - Number(screenRef.availWidth))
           : null,
-        availDeltaHeight: safeNumber(screenRef.height) !== null && safeNumber(screenRef.availHeight) !== null
+        availDeltaHeight: roundDimension(screenRef.height) !== null && roundDimension(screenRef.availHeight) !== null
           ? Math.max(0, Number(screenRef.height) - Number(screenRef.availHeight))
           : null,
         fullscreen: isFullscreen(context),
+        rounded: true,
+        source: 'direct',
         cached: false
       };
 
@@ -87,7 +92,7 @@ export function createScreenFrameCollector() {
       }
 
       if (!frame.fullscreen && isZeroFrame(frame) && cachedScreenFrame) {
-        return { ...cachedScreenFrame, cached: true };
+        return { ...cachedScreenFrame, source: 'cache', cached: true };
       }
 
       return frame;
@@ -186,4 +191,51 @@ function hasUsableFrame(frame) {
 
 function isZeroFrame(frame) {
   return [frame.frameWidth, frame.frameHeight, frame.availDeltaWidth, frame.availDeltaHeight].every((value) => value === 0);
+}
+
+function ensureScreenFrameWatcher(context) {
+  const windowRef = getWindowRef(context);
+  if (screenFrameWatcherBound || typeof windowRef.addEventListener !== 'function') {
+    return;
+  }
+
+  const update = () => {
+    const current = snapshotScreenFrame(context);
+    if (hasUsableFrame(current) && !current.fullscreen) {
+      cachedScreenFrame = Object.freeze(current);
+    }
+  };
+
+  windowRef.addEventListener('resize', update, { passive: true });
+  windowRef.addEventListener('orientationchange', update, { passive: true });
+  screenFrameWatcherBound = true;
+}
+
+function snapshotScreenFrame(context) {
+  const windowRef = getWindowRef(context);
+  const screenRef = context.screen;
+  const outerWidth = roundDimension(windowRef.outerWidth);
+  const outerHeight = roundDimension(windowRef.outerHeight);
+  const innerWidth = roundDimension(windowRef.innerWidth);
+  const innerHeight = roundDimension(windowRef.innerHeight);
+  return {
+    outerWidth,
+    outerHeight,
+    innerWidth,
+    innerHeight,
+    left: roundDimension(windowRef.screenX ?? windowRef.screenLeft),
+    top: roundDimension(windowRef.screenY ?? windowRef.screenTop),
+    frameWidth: outerWidth !== null && innerWidth !== null ? Math.max(0, outerWidth - innerWidth) : null,
+    frameHeight: outerHeight !== null && innerHeight !== null ? Math.max(0, outerHeight - innerHeight) : null,
+    availDeltaWidth: roundDimension(screenRef.width) !== null && roundDimension(screenRef.availWidth) !== null
+      ? Math.max(0, Number(screenRef.width) - Number(screenRef.availWidth))
+      : null,
+    availDeltaHeight: roundDimension(screenRef.height) !== null && roundDimension(screenRef.availHeight) !== null
+      ? Math.max(0, Number(screenRef.height) - Number(screenRef.availHeight))
+      : null,
+    fullscreen: isFullscreen(context),
+    rounded: true,
+    source: 'watcher',
+    cached: false
+  };
 }

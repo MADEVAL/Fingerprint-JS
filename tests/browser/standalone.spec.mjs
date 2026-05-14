@@ -25,4 +25,13 @@ test('standalone browser bundle identifies from the script-tag demo', async ({ p
   expect(full.result.meta.blocked).toBe(false);
   expect(full.components.length).toBe(compact.capabilities.length);
   expect(full.calculations.hash.matches).toBe(true);
+  expect(compact.identity.matchesBaseline).toBe(true);
+  expect(compact.identity.identityComponents.length).toBeGreaterThan(0);
+
+  await page.getByRole('button', { name: 'Identify' }).click();
+  await expect(compactOutput).toContainText('"runCount": 2');
+  const secondCompact = JSON.parse(await compactOutput.textContent());
+  expect(secondCompact.identity.visitorId).toBe(compact.identity.visitorId);
+  expect(secondCompact.stability.runCount).toBe(2);
+  expect(secondCompact.stability.history[0].matchesBaseline).toBe(true);
 });

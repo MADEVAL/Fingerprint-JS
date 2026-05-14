@@ -1,5 +1,5 @@
 export const VERSION = '0.1.0';
-export const SCHEMA_VERSION = 'ff-v1';
+export const SCHEMA_VERSION = 'bbid-v2';
 export const DEFAULT_COLLECTOR_TIMEOUT_MS = 700;
 export const DEFAULT_LOAD_DELAY_MS = 50;
 

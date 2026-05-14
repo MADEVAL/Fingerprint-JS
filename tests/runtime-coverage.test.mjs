@@ -77,12 +77,17 @@ test('createCollector normalizes defaults and bounded weight', () => {
     weight: -10,
     collect: () => 'value'
   });
+  const identityAliasCollector = createCollector({ id: 'identity.alias', includeInIdentity: false, collect: () => 'value' });
+  const explicitHashableCollector = createCollector({ id: 'identity.explicit', hashable: false, includeInIdentity: true, collect: () => 'value' });
 
   assert.equal(defaultCollector.version, '1');
   assert.equal(defaultCollector.category, 'custom');
   assert.equal(defaultCollector.mode, 'passive');
+  assert.equal(defaultCollector.hashable, true);
   assert.equal(activeCollector.version, '2');
   assert.equal(activeCollector.weight, 0);
+  assert.equal(identityAliasCollector.hashable, false);
+  assert.equal(explicitHashableCollector.hashable, false);
 });
 
 test('components API redacts only successful component values', async () => {

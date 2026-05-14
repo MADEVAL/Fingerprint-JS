@@ -37,6 +37,7 @@ export function createBotDetectionCollector() {
     mode: 'passive',
     stability: 'stable',
     weight: 0.95,
+    hashable: false,
     collect(context) {
       const navigatorRef = context.navigator;
       const windowRef = getWindowRef(context);

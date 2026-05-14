@@ -13,6 +13,7 @@ export function createPrivacyModeCollector() {
     mode: 'active',
     stability: 'volatile',
     weight: 0.85,
+    hashable: false,
     async collect(context) {
       const globalRef = context.global || {};
       const navigatorRef = context.navigator || {};

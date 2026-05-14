@@ -7,6 +7,9 @@ export function detectBrowserQuirks(context = {}) {
   const uaData = navigatorRef && navigatorRef.userAgentData ? navigatorRef.userAgentData : null;
   const uaPlatform = String((uaData && uaData.platform) || '');
   const brandNames = normalizeBrandNames(uaData && uaData.brands);
+  const screenWidth = safeNumber(screenRef && screenRef.width);
+  const screenHeight = safeNumber(screenRef && screenRef.height);
+  const hardwareConcurrency = safeNumber(navigatorRef && navigatorRef.hardwareConcurrency);
 
   const firefoxMatch = /Firefox\/(\d+)/u.exec(userAgent);
   const firefoxIosMatch = /FxiOS\/(\d+)/u.exec(userAgent);
@@ -15,26 +18,46 @@ export function detectBrowserQuirks(context = {}) {
   const chromeMatch = /(?:Chrome|Chromium|CriOS)\/(\d+)/u.exec(userAgent);
   const chromiumFromBrand = brandNames.some((name) => /Chromium|Google Chrome|Microsoft Edge/u.test(name));
   const chromiumFromUa = /Chrome\/|Chromium\/|CriOS\/|Edg\//u.test(userAgent);
-  const geckoFeature = 'mozInnerScreenX' in windowRef || supportsCss(windowRef, '-moz-appearance', 'none');
-  const chromiumFeature = Boolean(windowRef.chrome && (windowRef.chrome.runtime || windowRef.chrome.loadTimes || windowRef.chrome.csi));
-  const webKitFeature = 'WebKitCSSMatrix' in windowRef || 'webkitRequestAnimationFrame' in windowRef || supportsCss(windowRef, '-webkit-touch-callout', 'none') || Boolean(windowRef.safari);
+  const featureSignals = Object.freeze({
+    chromium: countTruthy([
+      Boolean(windowRef.chrome && (windowRef.chrome.runtime || windowRef.chrome.loadTimes || windowRef.chrome.csi)),
+      'webkitStorageInfo' in windowRef,
+      'webkitResolveLocalFileSystemURL' in windowRef,
+      Boolean(navigatorRef && navigatorRef.userAgentData),
+      supportsCss(windowRef, 'selector(:has(*))', '')
+    ]),
+    gecko: countTruthy([
+      'mozInnerScreenX' in windowRef,
+      'mozPaintCount' in windowRef,
+      Boolean(navigatorRef && (navigatorRef.buildID || navigatorRef.buildId)),
+      supportsCss(windowRef, '-moz-appearance', 'none')
+    ]),
+    webkit: countTruthy([
+      'WebKitCSSMatrix' in windowRef,
+      'webkitRequestAnimationFrame' in windowRef,
+      'webkitAudioContext' in windowRef,
+      supportsCss(windowRef, '-webkit-touch-callout', 'none'),
+      Boolean(windowRef.safari)
+    ])
+  });
+  const geckoFeature = featureSignals.gecko >= 1;
+  const chromiumFeature = featureSignals.chromium >= 1;
+  const webKitFeature = featureSignals.webkit >= 1;
   const isFirefox = Boolean(firefoxMatch || geckoFeature) && !/Seamonkey\//u.test(userAgent);
   const isChromium = (chromiumFromBrand || chromiumFromUa || chromiumFeature) && !isFirefox;
   const isSafari = /Safari\//u.test(userAgent) && !isChromium && !/FxiOS\/|OPR\/|SamsungBrowser\//u.test(userAgent);
   const isWebKit = /AppleWebKit\//u.test(userAgent) || webKitFeature;
-  const isIos = /iPad|iPhone|iPod/u.test(platform) || /iPad|iPhone|iPod/u.test(userAgent) || (platform === 'MacIntel' && safeNumber(navigatorRef && navigatorRef.maxTouchPoints) > 1);
+  const isIPad = platform === 'iPad' || /iPad/u.test(userAgent) || (platform === 'MacIntel' && safeNumber(navigatorRef && navigatorRef.maxTouchPoints) > 1);
+  const isIos = /iPad|iPhone|iPod/u.test(platform) || /iPad|iPhone|iPod/u.test(userAgent) || isIPad;
   const isAndroid = /Android/u.test(userAgent) || uaPlatform === 'Android';
   const safariMajor = safariMatch ? Number(safariMatch[1]) : null;
   const firefoxMajor = firefoxMatch ? Number(firefoxMatch[1]) : null;
   const firefoxIosMajor = firefoxIosMatch ? Number(firefoxIosMatch[1]) : null;
   const chromiumMajor = chromeMatch ? Number(chromeMatch[1]) : null;
   const samsungMajor = samsungMatch ? Number(samsungMatch[1]) : null;
-  const screenWidth = safeNumber(screenRef && screenRef.width);
-  const screenHeight = safeNumber(screenRef && screenRef.height);
-  const hardwareConcurrency = safeNumber(navigatorRef && navigatorRef.hardwareConcurrency);
-
   return Object.freeze({
     engine: isFirefox ? 'gecko' : isChromium ? 'chromium' : isWebKit ? 'webkit' : 'unknown',
+    featureSignals,
     isAndroid,
     isChromium,
     isFirefox,
@@ -42,9 +65,11 @@ export function detectBrowserQuirks(context = {}) {
     isFirefox143OrNewer: Boolean(isFirefox && firefoxMajor !== null && firefoxMajor >= 143),
     isFirefoxResistFingerprintingLikely: Boolean(isFirefox && hardwareConcurrency === 2 && screenWidth === 1000 && screenHeight === 1000),
     isIos,
+    isIPad,
     isIosDesktopMode: Boolean(platform === 'MacIntel' && safeNumber(navigatorRef && navigatorRef.maxTouchPoints) > 1),
     isOldMobileSafari: Boolean(isIos && isSafari && safariMajor !== null && safariMajor <= 11),
     isSafari,
+    isDesktopSafari: Boolean(isSafari && !isIos),
     isSafari17OrNewer: Boolean(isSafari && safariMajor !== null && safariMajor >= 17),
     isSamsungInternet: Boolean(samsungMatch || brandNames.some((name) => /Samsung Internet/u.test(name))),
     isSamsungInternet26OrNewer: Boolean((samsungMatch || brandNames.some((name) => /Samsung Internet/u.test(name))) && samsungMajor !== null && samsungMajor >= 26),
@@ -134,6 +159,10 @@ function normalizeBrandNames(brands) {
 
 function safeNumber(value) {
   return Number.isFinite(value) ? Number(value) : null;
+}
+
+function countTruthy(values) {
+  return values.filter(Boolean).length;
 }
 
 function supportsCss(windowRef, property, value) {

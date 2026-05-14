@@ -7,9 +7,13 @@ The SDK can run as an ESM package or as a standalone browser script. It does not
 ## Public Builds
 
 - `dist/index.mjs`: main ESM API.
+- `dist/index.cjs`: main CommonJS API.
 - `dist/collectors.mjs`: collector factory subpath.
+- `dist/collectors.cjs`: CommonJS collector factory subpath.
 - `dist/policy.mjs`: policy subpath.
+- `dist/policy.cjs`: CommonJS policy subpath.
 - `dist/storage.mjs`: storage subpath.
+- `dist/storage.cjs`: CommonJS storage subpath.
 - `dist/browser/fingerprintjs-botblocker.js`: readable browser global build.
 - `dist/browser/fingerprintjs-botblocker.min.js`: minified script-tag build.
 - `dist/*.d.ts`: TypeScript declarations for public package entry points.
@@ -47,6 +51,14 @@ Collection rules:
 
 Policy options support consent gates, sensitivity limits, active collector control, unstable collector control, collector/category allow lists, collector/category deny lists, and optional value redaction.
 
+Identity options are independent from collection policy:
+
+- `identity.includeNonHashable`: include report-only components in the hash when a deployment intentionally wants an all-signals identifier.
+- `identity.allowCollectors`: restrict hash inputs to a specific collector ID allow list.
+- `identity.denyCollectors`: exclude specific collector IDs from the hash.
+
+The default identity mode only hashes components whose collector is `hashable: true`. Volatile, risk, diagnostics, and capability signals can still be collected and returned without moving the stable visitor ID.
+
 ## Result Shape
 
 `identify()` / `get()` returns:
@@ -62,7 +74,14 @@ Policy options support consent gates, sensitivity limits, active collector contr
     level,
     entropy,
     collectedWeight,
-    possibleWeight
+    possibleWeight,
+    platformScore,
+    collectionQuality: {
+      score,
+      level,
+      collectedWeight,
+      possibleWeight
+    }
   },
   components: [
     {
@@ -72,6 +91,7 @@ Policy options support consent gates, sensitivity limits, active collector contr
       sensitivity,
       mode,
       stability,
+      hashable,
       weight,
       status,
       value,
@@ -85,6 +105,8 @@ Policy options support consent gates, sensitivity limits, active collector contr
     profile,
     durationMs,
     hashAlgorithm,
+    identityComponents,
+    reportOnlyComponents,
     blocked,
     reason,
     storage
@@ -92,7 +114,7 @@ Policy options support consent gates, sensitivity limits, active collector contr
 }
 ```
 
-The browser demo additionally derives compact and full reports from this result. Both reports include identity, risk, quality, timing, hash recalculation, storage state, component totals, status counts, sensitivity counts, mode counts, category counts, and every capability status.
+The browser demo additionally derives compact and full reports from this result. Both reports include identity, risk, quality, timing, hash recalculation, storage state, component totals, status counts, sensitivity counts, mode counts, category counts, every capability status, baseline visitor ID, current visitor ID, changed identity/report-only components, and recent run history.
 
 ## Hashing And Identity
 
@@ -104,13 +126,15 @@ Before hashing, component values are canonicalized:
 - dates become ISO strings;
 - BigInt values become decimal strings.
 
-Hash payload data:
+Default hash payload data:
 
 - schema version;
 - namespace;
 - optional salt;
-- component versions;
-- canonical component values.
+- identity-safe component versions;
+- canonical identity-safe component values.
+
+The `visitorId` excludes report-only components by default. `browser.botDetection`, `browser.privacyMode`, `network.connection`, `performance.memory`, `storage.capabilities`, `browser.applePay`, `browser.privateClickMeasurement`, and `browser.domBlockers` are examples of useful report signals that should not change identity by default.
 
 Hash algorithms:
 
@@ -118,7 +142,26 @@ Hash algorithms:
 - Node Crypto SHA-256 when available;
 - deterministic fallback hash for constrained runtimes.
 
-`hashComponents(components, options, context)` exposes the same hashing path for product-side filtering and report verification.
+`hashComponents(components, options, context)` exposes the same hashing path for product-side filtering, lazy hashing, and report verification. It defaults to identity-safe components and supports `includeNonHashable`, `allowCollectors`, and `denyCollectors` for diagnostics or custom identity policy.
+
+## Browser Stability Model
+
+Known unstable sources are suppressed or normalized before they can affect identity:
+
+- Browser quirks: feature-assisted engine detection for Chromium, WebKit, Gecko, Safari, Firefox, iOS desktop mode, Android, and Samsung Internet.
+- Canvas: deterministic drawing plus double-read detection for text canvas noise.
+- Audio: offline render retry, timeout, suspended, unsupported, and error statuses.
+- Screen frame: rounded dimensions, fullscreen detection, resize/orientation cache backup, and known browser suppressions.
+- Fonts: expanded candidate list, iframe-isolated measurement, normalized widths, and preference presets.
+- WebGL: context attributes, drawing buffer size, renderer strings, extension filtering for noisy debug/timer extensions, limits, viewport dimensions, and shader precision.
+
+## Browser Support Matrix
+
+- Chromium desktop and Android: full passive support, active collectors available when profile and policy allow them.
+- Firefox desktop: full passive support, with canvas/screen suppression for known resist-fingerprinting and newer randomized paths.
+- Safari desktop and iOS/WebKit: passive support plus conservative suppression for unstable audio/canvas/screen behavior.
+- Samsung Internet: Chromium-derived support with audio suppression for known unstable versions.
+- Node.js 18+: package imports, CommonJS requires, custom collectors, hashing, storage adapters, and Node runtime signals. Browser-only collectors return empty or unsupported values without requiring browser globals at import time.
 
 ## Built-In Collectors
 
@@ -210,4 +253,4 @@ Recommended backend payload:
 - TypeScript declaration validation;
 - Node tests with 100% line, branch, and function coverage for `src/**/*.js`;
 - Playwright tests in Chromium, Firefox, and WebKit;
-- minified browser bundle size check under 50 KB.
+- minified browser bundle size check under 55 KB.

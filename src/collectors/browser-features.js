@@ -27,6 +27,7 @@ export function createApiFeaturesCollector() {
     mode: 'passive',
     stability: 'stable',
     weight: 0.5,
+    hashable: false,
     collect(context) {
       const windowRef = getWindowRef(context);
       const navigatorRef = context.navigator || {};
@@ -50,6 +51,7 @@ export function createCssFeaturesCollector() {
     mode: 'passive',
     stability: 'stable',
     weight: 0.35,
+    hashable: false,
     collect(context) {
       const windowRef = getWindowRef(context);
       const cssRef = windowRef.CSS;
@@ -71,6 +73,7 @@ export function createNetworkConnectionCollector() {
     mode: 'passive',
     stability: 'volatile',
     weight: 0.25,
+    hashable: false,
     collect(context) {
       const navigatorRef = context.navigator || {};
       const connection = navigatorRef.connection || navigatorRef.mozConnection || navigatorRef.webkitConnection;
@@ -98,6 +101,7 @@ export function createPerformanceMemoryCollector() {
     mode: 'passive',
     stability: 'volatile',
     weight: 0.25,
+    hashable: false,
     collect(context) {
       const windowRef = getWindowRef(context);
       const memory = windowRef.performance && windowRef.performance.memory;
@@ -223,6 +227,7 @@ export function createApplePayCollector() {
     mode: 'passive',
     stability: 'stable',
     weight: 0.45,
+    hashable: false,
     collect(context) {
       const windowRef = getWindowRef(context);
       const ApplePaySession = windowRef.ApplePaySession;
@@ -252,6 +257,7 @@ export function createPrivateClickMeasurementCollector() {
     mode: 'passive',
     stability: 'stable',
     weight: 0.25,
+    hashable: false,
     collect(context) {
       const documentRef = context.document;
       if (!documentRef || typeof documentRef.createElement !== 'function') {
@@ -281,6 +287,7 @@ export function createDomBlockersCollector() {
     mode: 'active',
     stability: 'volatile',
     weight: 0.65,
+    hashable: false,
     collect(context) {
       const documentRef = context.document;
       if (!documentRef || !documentRef.body || typeof documentRef.createElement !== 'function') {

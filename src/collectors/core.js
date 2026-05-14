@@ -30,6 +30,11 @@ export function createCollector(definition) {
     mode: definition.mode === 'active' ? 'active' : 'passive',
     stability: definition.stability || 'stable',
     weight: Number.isFinite(definition.weight) ? Math.max(0, Number(definition.weight)) : 1,
+    hashable: typeof definition.hashable === 'boolean'
+      ? definition.hashable
+      : typeof definition.includeInIdentity === 'boolean'
+        ? definition.includeInIdentity
+        : true,
     prepare: definition.prepare || null,
     collect: definition.collect
   });

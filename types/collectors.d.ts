@@ -20,6 +20,8 @@ export interface CollectorDefinition<T = unknown, Prepared = unknown> {
   mode?: CollectorMode;
   stability?: 'stable' | 'volatile' | string;
   weight?: number;
+  hashable?: boolean;
+  includeInIdentity?: boolean;
   prepare?(context: CollectorContext): Prepared | Promise<Prepared>;
   collect(context: CollectorContext, prepared?: Prepared): T | Promise<T>;
 }
@@ -32,6 +34,7 @@ export interface Collector<T = unknown, Prepared = unknown> {
   mode: CollectorMode;
   stability: string;
   weight: number;
+  hashable: boolean;
   prepare: null | ((context: CollectorContext) => Prepared | Promise<Prepared>);
   collect(context: CollectorContext, prepared?: Prepared): T | Promise<T>;
 }

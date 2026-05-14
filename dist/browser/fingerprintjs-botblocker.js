@@ -101,7 +101,7 @@ var FingerprintJSBotBlocker = (() => {
 
   // src/constants.js
   var VERSION = "0.1.0";
-  var SCHEMA_VERSION = "ff-v1";
+  var SCHEMA_VERSION = "bbid-v2";
   var DEFAULT_COLLECTOR_TIMEOUT_MS = 700;
   var DEFAULT_LOAD_DELAY_MS = 50;
   var SENSITIVITY_RANK = Object.freeze({ low: 1, medium: 2, high: 3 });
@@ -149,6 +149,7 @@ var FingerprintJSBotBlocker = (() => {
       mode: definition.mode === "active" ? "active" : "passive",
       stability: definition.stability || "stable",
       weight: Number.isFinite(definition.weight) ? Math.max(0, Number(definition.weight)) : 1,
+      hashable: typeof definition.hashable === "boolean" ? definition.hashable : typeof definition.includeInIdentity === "boolean" ? definition.includeInIdentity : true,
       prepare: definition.prepare || null,
       collect: definition.collect
     });
@@ -231,6 +232,7 @@ var FingerprintJSBotBlocker = (() => {
       mode: "passive",
       stability: "stable",
       weight: 0.95,
+      hashable: false,
       collect(context) {
         const navigatorRef = context.navigator;
         const windowRef = getWindowRef(context);
@@ -378,6 +380,7 @@ var FingerprintJSBotBlocker = (() => {
       mode: "passive",
       stability: "stable",
       weight: 0.5,
+      hashable: false,
       collect(context) {
         const windowRef = getWindowRef(context);
         const navigatorRef = context.navigator || {};
@@ -399,6 +402,7 @@ var FingerprintJSBotBlocker = (() => {
       mode: "passive",
       stability: "stable",
       weight: 0.35,
+      hashable: false,
       collect(context) {
         const windowRef = getWindowRef(context);
         const cssRef = windowRef.CSS;
@@ -418,6 +422,7 @@ var FingerprintJSBotBlocker = (() => {
       mode: "passive",
       stability: "volatile",
       weight: 0.25,
+      hashable: false,
       collect(context) {
         const navigatorRef = context.navigator || {};
         const connection = navigatorRef.connection || navigatorRef.mozConnection || navigatorRef.webkitConnection;
@@ -443,6 +448,7 @@ var FingerprintJSBotBlocker = (() => {
       mode: "passive",
       stability: "volatile",
       weight: 0.25,
+      hashable: false,
       collect(context) {
         const windowRef = getWindowRef(context);
         const memory = windowRef.performance && windowRef.performance.memory;
@@ -557,6 +563,7 @@ var FingerprintJSBotBlocker = (() => {
       mode: "passive",
       stability: "stable",
       weight: 0.45,
+      hashable: false,
       collect(context) {
         const windowRef = getWindowRef(context);
         const ApplePaySession = windowRef.ApplePaySession;
@@ -583,6 +590,7 @@ var FingerprintJSBotBlocker = (() => {
       mode: "passive",
       stability: "stable",
       weight: 0.25,
+      hashable: false,
       collect(context) {
         const documentRef = context.document;
         if (!documentRef || typeof documentRef.createElement !== "function") {
@@ -606,6 +614,7 @@ var FingerprintJSBotBlocker = (() => {
       mode: "active",
       stability: "volatile",
       weight: 0.65,
+      hashable: false,
       collect(context) {
         const documentRef = context.document;
         if (!documentRef || !documentRef.body || typeof documentRef.createElement !== "function") {
@@ -684,6 +693,9 @@ var FingerprintJSBotBlocker = (() => {
     const uaData = navigatorRef && navigatorRef.userAgentData ? navigatorRef.userAgentData : null;
     const uaPlatform = String(uaData && uaData.platform || "");
     const brandNames = normalizeBrandNames(uaData && uaData.brands);
+    const screenWidth = safeNumber2(screenRef && screenRef.width);
+    const screenHeight = safeNumber2(screenRef && screenRef.height);
+    const hardwareConcurrency = safeNumber2(navigatorRef && navigatorRef.hardwareConcurrency);
     const firefoxMatch = /Firefox\/(\d+)/u.exec(userAgent);
     const firefoxIosMatch = /FxiOS\/(\d+)/u.exec(userAgent);
     const safariMatch = /Version\/(\d+)/u.exec(userAgent);
@@ -691,25 +703,46 @@ var FingerprintJSBotBlocker = (() => {
     const chromeMatch = /(?:Chrome|Chromium|CriOS)\/(\d+)/u.exec(userAgent);
     const chromiumFromBrand = brandNames.some((name) => /Chromium|Google Chrome|Microsoft Edge/u.test(name));
     const chromiumFromUa = /Chrome\/|Chromium\/|CriOS\/|Edg\//u.test(userAgent);
-    const geckoFeature = "mozInnerScreenX" in windowRef || supportsCss2(windowRef, "-moz-appearance", "none");
-    const chromiumFeature = Boolean(windowRef.chrome && (windowRef.chrome.runtime || windowRef.chrome.loadTimes || windowRef.chrome.csi));
-    const webKitFeature = "WebKitCSSMatrix" in windowRef || "webkitRequestAnimationFrame" in windowRef || supportsCss2(windowRef, "-webkit-touch-callout", "none") || Boolean(windowRef.safari);
+    const featureSignals = Object.freeze({
+      chromium: countTruthy([
+        Boolean(windowRef.chrome && (windowRef.chrome.runtime || windowRef.chrome.loadTimes || windowRef.chrome.csi)),
+        "webkitStorageInfo" in windowRef,
+        "webkitResolveLocalFileSystemURL" in windowRef,
+        Boolean(navigatorRef && navigatorRef.userAgentData),
+        supportsCss2(windowRef, "selector(:has(*))", "")
+      ]),
+      gecko: countTruthy([
+        "mozInnerScreenX" in windowRef,
+        "mozPaintCount" in windowRef,
+        Boolean(navigatorRef && (navigatorRef.buildID || navigatorRef.buildId)),
+        supportsCss2(windowRef, "-moz-appearance", "none")
+      ]),
+      webkit: countTruthy([
+        "WebKitCSSMatrix" in windowRef,
+        "webkitRequestAnimationFrame" in windowRef,
+        "webkitAudioContext" in windowRef,
+        supportsCss2(windowRef, "-webkit-touch-callout", "none"),
+        Boolean(windowRef.safari)
+      ])
+    });
+    const geckoFeature = featureSignals.gecko >= 1;
+    const chromiumFeature = featureSignals.chromium >= 1;
+    const webKitFeature = featureSignals.webkit >= 1;
     const isFirefox = Boolean(firefoxMatch || geckoFeature) && !/Seamonkey\//u.test(userAgent);
     const isChromium = (chromiumFromBrand || chromiumFromUa || chromiumFeature) && !isFirefox;
     const isSafari = /Safari\//u.test(userAgent) && !isChromium && !/FxiOS\/|OPR\/|SamsungBrowser\//u.test(userAgent);
     const isWebKit = /AppleWebKit\//u.test(userAgent) || webKitFeature;
-    const isIos = /iPad|iPhone|iPod/u.test(platform) || /iPad|iPhone|iPod/u.test(userAgent) || platform === "MacIntel" && safeNumber2(navigatorRef && navigatorRef.maxTouchPoints) > 1;
+    const isIPad = platform === "iPad" || /iPad/u.test(userAgent) || platform === "MacIntel" && safeNumber2(navigatorRef && navigatorRef.maxTouchPoints) > 1;
+    const isIos = /iPad|iPhone|iPod/u.test(platform) || /iPad|iPhone|iPod/u.test(userAgent) || isIPad;
     const isAndroid = /Android/u.test(userAgent) || uaPlatform === "Android";
     const safariMajor = safariMatch ? Number(safariMatch[1]) : null;
     const firefoxMajor = firefoxMatch ? Number(firefoxMatch[1]) : null;
     const firefoxIosMajor = firefoxIosMatch ? Number(firefoxIosMatch[1]) : null;
     const chromiumMajor = chromeMatch ? Number(chromeMatch[1]) : null;
     const samsungMajor = samsungMatch ? Number(samsungMatch[1]) : null;
-    const screenWidth = safeNumber2(screenRef && screenRef.width);
-    const screenHeight = safeNumber2(screenRef && screenRef.height);
-    const hardwareConcurrency = safeNumber2(navigatorRef && navigatorRef.hardwareConcurrency);
     return Object.freeze({
       engine: isFirefox ? "gecko" : isChromium ? "chromium" : isWebKit ? "webkit" : "unknown",
+      featureSignals,
       isAndroid,
       isChromium,
       isFirefox,
@@ -717,9 +750,11 @@ var FingerprintJSBotBlocker = (() => {
       isFirefox143OrNewer: Boolean(isFirefox && firefoxMajor !== null && firefoxMajor >= 143),
       isFirefoxResistFingerprintingLikely: Boolean(isFirefox && hardwareConcurrency === 2 && screenWidth === 1e3 && screenHeight === 1e3),
       isIos,
+      isIPad,
       isIosDesktopMode: Boolean(platform === "MacIntel" && safeNumber2(navigatorRef && navigatorRef.maxTouchPoints) > 1),
       isOldMobileSafari: Boolean(isIos && isSafari && safariMajor !== null && safariMajor <= 11),
       isSafari,
+      isDesktopSafari: Boolean(isSafari && !isIos),
       isSafari17OrNewer: Boolean(isSafari && safariMajor !== null && safariMajor >= 17),
       isSamsungInternet: Boolean(samsungMatch || brandNames.some((name) => /Samsung Internet/u.test(name))),
       isSamsungInternet26OrNewer: Boolean((samsungMatch || brandNames.some((name) => /Samsung Internet/u.test(name))) && samsungMajor !== null && samsungMajor >= 26),
@@ -791,6 +826,9 @@ var FingerprintJSBotBlocker = (() => {
   function safeNumber2(value) {
     return Number.isFinite(value) ? Number(value) : null;
   }
+  function countTruthy(values) {
+    return values.filter(Boolean).length;
+  }
   function supportsCss2(windowRef, property, value) {
     try {
       return Boolean(windowRef.CSS && typeof windowRef.CSS.supports === "function" && windowRef.CSS.supports(property, value));
@@ -801,6 +839,7 @@ var FingerprintJSBotBlocker = (() => {
 
   // src/collectors/display.js
   var cachedScreenFrame = null;
+  var screenFrameWatcherBound = false;
   function createScreenCollector() {
     return createCollector({
       id: "screen.metrics",
@@ -850,29 +889,32 @@ var FingerprintJSBotBlocker = (() => {
         if (!screenRef) {
           return null;
         }
-        const outerWidth = safeNumber(windowRef.outerWidth);
-        const outerHeight = safeNumber(windowRef.outerHeight);
-        const innerWidth = safeNumber(windowRef.innerWidth);
-        const innerHeight = safeNumber(windowRef.innerHeight);
+        ensureScreenFrameWatcher(context);
+        const outerWidth = roundDimension(windowRef.outerWidth);
+        const outerHeight = roundDimension(windowRef.outerHeight);
+        const innerWidth = roundDimension(windowRef.innerWidth);
+        const innerHeight = roundDimension(windowRef.innerHeight);
         const frame = {
           outerWidth,
           outerHeight,
           innerWidth,
           innerHeight,
-          left: safeNumber(windowRef.screenX ?? windowRef.screenLeft),
-          top: safeNumber(windowRef.screenY ?? windowRef.screenTop),
+          left: roundDimension(windowRef.screenX ?? windowRef.screenLeft),
+          top: roundDimension(windowRef.screenY ?? windowRef.screenTop),
           frameWidth: outerWidth !== null && innerWidth !== null ? Math.max(0, outerWidth - innerWidth) : null,
           frameHeight: outerHeight !== null && innerHeight !== null ? Math.max(0, outerHeight - innerHeight) : null,
-          availDeltaWidth: safeNumber(screenRef.width) !== null && safeNumber(screenRef.availWidth) !== null ? Math.max(0, Number(screenRef.width) - Number(screenRef.availWidth)) : null,
-          availDeltaHeight: safeNumber(screenRef.height) !== null && safeNumber(screenRef.availHeight) !== null ? Math.max(0, Number(screenRef.height) - Number(screenRef.availHeight)) : null,
+          availDeltaWidth: roundDimension(screenRef.width) !== null && roundDimension(screenRef.availWidth) !== null ? Math.max(0, Number(screenRef.width) - Number(screenRef.availWidth)) : null,
+          availDeltaHeight: roundDimension(screenRef.height) !== null && roundDimension(screenRef.availHeight) !== null ? Math.max(0, Number(screenRef.height) - Number(screenRef.availHeight)) : null,
           fullscreen: isFullscreen(context),
+          rounded: true,
+          source: "direct",
           cached: false
         };
         if (!frame.fullscreen && hasUsableFrame(frame)) {
           cachedScreenFrame = Object.freeze({ ...frame });
         }
         if (!frame.fullscreen && isZeroFrame(frame) && cachedScreenFrame) {
-          return { ...cachedScreenFrame, cached: true };
+          return { ...cachedScreenFrame, source: "cache", cached: true };
         }
         return frame;
       }
@@ -956,22 +998,82 @@ var FingerprintJSBotBlocker = (() => {
   function isZeroFrame(frame) {
     return [frame.frameWidth, frame.frameHeight, frame.availDeltaWidth, frame.availDeltaHeight].every((value) => value === 0);
   }
+  function ensureScreenFrameWatcher(context) {
+    const windowRef = getWindowRef(context);
+    if (screenFrameWatcherBound || typeof windowRef.addEventListener !== "function") {
+      return;
+    }
+    const update = () => {
+      const current = snapshotScreenFrame(context);
+      if (hasUsableFrame(current) && !current.fullscreen) {
+        cachedScreenFrame = Object.freeze(current);
+      }
+    };
+    windowRef.addEventListener("resize", update, { passive: true });
+    windowRef.addEventListener("orientationchange", update, { passive: true });
+    screenFrameWatcherBound = true;
+  }
+  function snapshotScreenFrame(context) {
+    const windowRef = getWindowRef(context);
+    const screenRef = context.screen;
+    const outerWidth = roundDimension(windowRef.outerWidth);
+    const outerHeight = roundDimension(windowRef.outerHeight);
+    const innerWidth = roundDimension(windowRef.innerWidth);
+    const innerHeight = roundDimension(windowRef.innerHeight);
+    return {
+      outerWidth,
+      outerHeight,
+      innerWidth,
+      innerHeight,
+      left: roundDimension(windowRef.screenX ?? windowRef.screenLeft),
+      top: roundDimension(windowRef.screenY ?? windowRef.screenTop),
+      frameWidth: outerWidth !== null && innerWidth !== null ? Math.max(0, outerWidth - innerWidth) : null,
+      frameHeight: outerHeight !== null && innerHeight !== null ? Math.max(0, outerHeight - innerHeight) : null,
+      availDeltaWidth: roundDimension(screenRef.width) !== null && roundDimension(screenRef.availWidth) !== null ? Math.max(0, Number(screenRef.width) - Number(screenRef.availWidth)) : null,
+      availDeltaHeight: roundDimension(screenRef.height) !== null && roundDimension(screenRef.availHeight) !== null ? Math.max(0, Number(screenRef.height) - Number(screenRef.availHeight)) : null,
+      fullscreen: isFullscreen(context),
+      rounded: true,
+      source: "watcher",
+      cached: false
+    };
+  }
 
   // src/collectors/fonts.js
   var FONT_CANDIDATES = Object.freeze([
     "Arial",
     "Arial Unicode MS",
+    "Avenir Next",
+    "Book Antiqua",
     "Calibri",
     "Cambria",
+    "Candara",
+    "Comic Sans MS",
     "Courier New",
+    "DejaVu Sans",
     "Georgia",
     "Helvetica Neue",
+    "Lucida Console",
+    "Lucida Sans Unicode",
     "Menlo",
+    "Monaco",
+    "Noto Color Emoji",
+    "Palatino",
     "Roboto",
+    "San Francisco",
     "Segoe UI",
-    "Times New Roman"
+    "Tahoma",
+    "Times New Roman",
+    "Trebuchet MS",
+    "Ubuntu",
+    "Verdana"
   ]);
   var BASE_FONTS = Object.freeze(["monospace", "sans-serif", "serif"]);
+  var PREFERENCE_SAMPLES = Object.freeze({
+    defaultText: "mmmmmmmmmmlli",
+    denseText: "mmMwWLliI0O&1",
+    emoji: "emoji",
+    math: "math"
+  });
   function createFontsCollector() {
     return createCollector({
       id: "fonts.available",
@@ -1029,19 +1131,19 @@ var FingerprintJSBotBlocker = (() => {
     if (!canMeasure(documentRef)) {
       return null;
     }
+    const devicePixelRatio = normalizeDevicePixelRatio(context);
     return withMeasurementDocument(documentRef, (measurementDocument) => {
       const container = createContainer(measurementDocument);
       try {
         measurementDocument.body.appendChild(container);
         const sizes = {};
         for (const family of BASE_FONTS) {
-          const element = createSpan(measurementDocument, family, "mmmmmmmmmmlli", "72px");
+          const element = createSpan(measurementDocument, family, PREFERENCE_SAMPLES.defaultText, "72px");
           container.appendChild(element);
-          sizes[family] = {
-            width: safeNumber(element.offsetWidth),
-            height: safeNumber(element.offsetHeight)
-          };
+          sizes[family] = readBox(element, devicePixelRatio);
         }
+        sizes.presets = measurePreferencePresets(measurementDocument, container, devicePixelRatio);
+        sizes.devicePixelRatio = devicePixelRatio;
         return sizes;
       } finally {
         removeNode(container);
@@ -1069,7 +1171,7 @@ var FingerprintJSBotBlocker = (() => {
       documentRef.body.appendChild(container);
       const baseMeasurements = {};
       for (const baseFont of BASE_FONTS) {
-        const base = createSpan(documentRef, baseFont, "mmMwWLliI0O&1", "48px");
+        const base = createSpan(documentRef, baseFont, PREFERENCE_SAMPLES.denseText, "48px");
         container.appendChild(base);
         baseMeasurements[baseFont] = readBox(base);
       }
@@ -1120,10 +1222,10 @@ var FingerprintJSBotBlocker = (() => {
   }
   function isFontAvailable(documentRef, container, font, baseMeasurements) {
     for (const baseFont of BASE_FONTS) {
-      const span = createSpan(documentRef, `"${font}",${baseFont}`, "mmMwWLliI0O&1", "48px");
+      const span = createSpan(documentRef, `"${font}",${baseFont}`, PREFERENCE_SAMPLES.denseText, "48px");
       container.appendChild(span);
       const box = readBox(span);
-      if (box.width !== baseMeasurements[baseFont].width || box.height !== baseMeasurements[baseFont].height) {
+      if (box.width !== baseMeasurements[baseFont].width) {
         return true;
       }
     }
@@ -1149,11 +1251,30 @@ var FingerprintJSBotBlocker = (() => {
     span.style.whiteSpace = "nowrap";
     return span;
   }
-  function readBox(element) {
+  function readBox(element, devicePixelRatio = 1) {
+    const width = safeNumber(element.offsetWidth);
+    const height = safeNumber(element.offsetHeight);
     return {
-      width: safeNumber(element.offsetWidth),
-      height: safeNumber(element.offsetHeight)
+      width,
+      height,
+      normalizedWidth: width === null ? null : Math.round(width / devicePixelRatio * 100) / 100
     };
+  }
+  function measurePreferencePresets(documentRef, container, devicePixelRatio) {
+    const presets = {};
+    for (const [name, sample] of Object.entries(PREFERENCE_SAMPLES)) {
+      presets[name] = {};
+      for (const family of BASE_FONTS) {
+        const element = createSpan(documentRef, family, sample, name === "emoji" ? "48px" : "64px");
+        container.appendChild(element);
+        presets[name][family] = readBox(element, devicePixelRatio).normalizedWidth;
+      }
+    }
+    return presets;
+  }
+  function normalizeDevicePixelRatio(context) {
+    const ratio = safeNumber(context && context.global && context.global.devicePixelRatio);
+    return ratio && ratio > 0 ? ratio : 1;
   }
   function removeNode(node) {
     if (node && node.parentNode && typeof node.parentNode.removeChild === "function") {
@@ -1162,6 +1283,11 @@ var FingerprintJSBotBlocker = (() => {
   }
 
   // src/collectors/graphics.js
+  var NOISY_WEBGL_EXTENSIONS = Object.freeze([
+    "EXT_disjoint_timer_query",
+    "EXT_disjoint_timer_query_webgl2",
+    "WEBGL_debug_shaders"
+  ]);
   function createWebglCollector() {
     return createCollector({
       id: "webgl.renderer",
@@ -1178,6 +1304,9 @@ var FingerprintJSBotBlocker = (() => {
         }
         const debugInfo = gl.getExtension ? gl.getExtension("WEBGL_debug_renderer_info") : null;
         return {
+          contextAttributes: readContextAttributes(gl),
+          drawingBufferWidth: safeNumber(gl.drawingBufferWidth),
+          drawingBufferHeight: safeNumber(gl.drawingBufferHeight),
           vendor: getGlParameter(gl, gl.VENDOR),
           renderer: getGlParameter(gl, gl.RENDERER),
           version: getGlParameter(gl, gl.VERSION),
@@ -1203,12 +1332,20 @@ var FingerprintJSBotBlocker = (() => {
           return null;
         }
         const extensions = typeof gl.getSupportedExtensions === "function" ? gl.getSupportedExtensions() : null;
-        const extensionList = Array.isArray(extensions) ? extensions.slice().sort() : [];
+        const rawExtensionList = Array.isArray(extensions) ? extensions.slice().map(String).sort() : [];
+        const extensionList = rawExtensionList.filter((extension) => !NOISY_WEBGL_EXTENSIONS.includes(extension));
+        const omittedExtensions = rawExtensionList.filter((extension) => NOISY_WEBGL_EXTENSIONS.includes(extension));
         return {
           extensions: extensionList,
+          omittedExtensions,
           maxTextureSize: getGlParameter(gl, gl.MAX_TEXTURE_SIZE),
           maxCombinedTextureImageUnits: getGlParameter(gl, gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS),
           maxRenderbufferSize: getGlParameter(gl, gl.MAX_RENDERBUFFER_SIZE),
+          maxCubeMapTextureSize: getGlParameter(gl, gl.MAX_CUBE_MAP_TEXTURE_SIZE),
+          maxVertexAttribs: getGlParameter(gl, gl.MAX_VERTEX_ATTRIBS),
+          maxVertexTextureImageUnits: getGlParameter(gl, gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS),
+          maxVaryingVectors: getGlParameter(gl, gl.MAX_VARYING_VECTORS),
+          maxViewportDims: normalizeNumberArray(getGlParameter(gl, gl.MAX_VIEWPORT_DIMS)),
           aliasedLineWidthRange: normalizeNumberArray(getGlParameter(gl, gl.ALIASED_LINE_WIDTH_RANGE)),
           aliasedPointSizeRange: normalizeNumberArray(getGlParameter(gl, gl.ALIASED_POINT_SIZE_RANGE))
         };
@@ -1264,6 +1401,33 @@ var FingerprintJSBotBlocker = (() => {
     canvas.height = height;
     return canvas;
   }
+  function readContextAttributes(gl) {
+    if (typeof gl.getContextAttributes !== "function") {
+      return null;
+    }
+    try {
+      const attributes = gl.getContextAttributes();
+      if (!attributes || typeof attributes !== "object") {
+        return null;
+      }
+      return {
+        alpha: safeBoolean2(attributes.alpha),
+        antialias: safeBoolean2(attributes.antialias),
+        depth: safeBoolean2(attributes.depth),
+        desynchronized: safeBoolean2(attributes.desynchronized),
+        failIfMajorPerformanceCaveat: safeBoolean2(attributes.failIfMajorPerformanceCaveat),
+        powerPreference: typeof attributes.powerPreference === "string" ? attributes.powerPreference : null,
+        premultipliedAlpha: safeBoolean2(attributes.premultipliedAlpha),
+        preserveDrawingBuffer: safeBoolean2(attributes.preserveDrawingBuffer),
+        stencil: safeBoolean2(attributes.stencil)
+      };
+    } catch (_error) {
+      return null;
+    }
+  }
+  function safeBoolean2(value) {
+    return typeof value === "boolean" ? value : null;
+  }
   function getGlParameter(gl, parameter) {
     try {
       const value = gl.getParameter(parameter);
@@ -1308,15 +1472,21 @@ var FingerprintJSBotBlocker = (() => {
     canvasContext.fillText("FingerprintJS by BotBlocker 0.1", 2, 18);
     canvasContext.fillStyle = "rgba(102, 204, 0, 0.65)";
     canvasContext.fillText("mwmw 12345", 4, 48);
-    return summarizeCanvas(canvas);
+    return summarizeCanvas(canvas, true);
   }
   function resetCanvas(canvas, width, height) {
     canvas.width = width;
     canvas.height = height;
   }
-  function summarizeCanvas(canvas) {
+  function summarizeCanvas(canvas, verifyStable = false) {
     try {
       const dataUrl = canvas.toDataURL();
+      if (verifyStable && canvas.toDataURL() !== dataUrl) {
+        return {
+          status: "unstable",
+          reason: "canvas_noise_detected"
+        };
+      }
       return {
         status: "ok",
         length: dataUrl.length,
@@ -1537,6 +1707,7 @@ var FingerprintJSBotBlocker = (() => {
   }
 
   // src/collectors/media.js
+  var DEFAULT_AUDIO_RENDER_TIMEOUT_MS = 1500;
   function createAudioCollector() {
     return createCollector({
       id: "audio.fingerprint",
@@ -1605,9 +1776,9 @@ var FingerprintJSBotBlocker = (() => {
     if (typeof OfflineAudioContext !== "function") {
       return { status: "unsupported" };
     }
-    return renderAudio(OfflineAudioContext);
+    return renderAudio(OfflineAudioContext, context);
   }
-  async function renderAudio(OfflineAudioContext) {
+  async function renderAudio(OfflineAudioContext, context) {
     const length = 4096;
     const sampleRate = 44100;
     const audioContext = new OfflineAudioContext(1, length, sampleRate);
@@ -1634,12 +1805,17 @@ var FingerprintJSBotBlocker = (() => {
     if (typeof oscillator.stop === "function") {
       oscillator.stop(0.05);
     }
-    const rendered = await resolveRenderedBuffer(audioContext);
+    const renderedResult = await resolveRenderedBuffer(audioContext, context);
+    if (!renderedResult.ok) {
+      return renderedResult.value;
+    }
+    const rendered = renderedResult.buffer;
     const samples = rendered && typeof rendered.getChannelData === "function" ? rendered.getChannelData(0) : new Float32Array(0);
     return {
       status: "ok",
       sampleRate: safeNumber(rendered && rendered.sampleRate) || sampleRate,
       length: safeNumber(rendered && rendered.length) || length,
+      renderAttempts: renderedResult.attempts,
       checksum: checksumSamples(samples)
     };
   }
@@ -1655,14 +1831,66 @@ var FingerprintJSBotBlocker = (() => {
       param.setValueAtTime(value, currentTime);
     }
   }
-  function resolveRenderedBuffer(audioContext) {
-    const rendered = audioContext.startRendering();
-    if (rendered && typeof rendered.then === "function") {
-      return rendered;
+  async function resolveRenderedBuffer(audioContext, context) {
+    const maxAttempts = 2;
+    let lastError = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const buffer = await startRenderingOnce(audioContext, context);
+        return Object.freeze({ ok: true, buffer, attempts: attempt });
+      } catch (error) {
+        lastError = error;
+        if (!shouldRetryAudioRender(audioContext, attempt, maxAttempts)) {
+          break;
+        }
+        await Promise.resolve();
+      }
     }
-    return new Promise((resolve, reject) => {
-      audioContext.oncomplete = (event) => resolve(event.renderedBuffer);
+    return Object.freeze({
+      ok: false,
+      value: Object.freeze({
+        status: audioContext.state === "suspended" ? "suspended" : lastError && lastError.code === "audio_render_timeout" ? "timeout" : "error",
+        message: lastError && lastError.message ? String(lastError.message) : "audio_render_failed"
+      })
+    });
+  }
+  function startRenderingOnce(audioContext, context) {
+    const renderedPromise = new Promise((resolve, reject) => {
+      audioContext.oncomplete = (event) => resolve(event && event.renderedBuffer);
       audioContext.onerror = reject;
+    });
+    const rendered = audioContext.startRendering();
+    const pending = rendered && typeof rendered.then === "function" ? rendered : renderedPromise;
+    return withAudioTimeout(pending, context);
+  }
+  function shouldRetryAudioRender(audioContext, attempt, maxAttempts) {
+    return attempt < maxAttempts && audioContext.state === "suspended";
+  }
+  function withAudioTimeout(promise, context) {
+    const runtimeTimers = getTimerFns(context && (context.global || context.window));
+    const fallbackTimers = getTimerFns(globalThis);
+    const timers = runtimeTimers || fallbackTimers;
+    const timeoutMs = Number.isFinite(context && context.audioRenderTimeoutMs) ? Math.max(0, Number(context.audioRenderTimeoutMs)) : DEFAULT_AUDIO_RENDER_TIMEOUT_MS;
+    if (!timeoutMs || !timers) {
+      return promise;
+    }
+    let timeoutId;
+    const timeout = new Promise((_resolve, reject) => {
+      timeoutId = timers.set(() => {
+        const error = new Error("audio_render_timeout");
+        error.code = "audio_render_timeout";
+        reject(error);
+      }, timeoutMs);
+    });
+    return Promise.race([promise, timeout]).finally(() => timers.clear(timeoutId));
+  }
+  function getTimerFns(ref) {
+    if (!ref || typeof ref.setTimeout !== "function" || typeof ref.clearTimeout !== "function") {
+      return null;
+    }
+    return Object.freeze({
+      set: ref.setTimeout.bind(ref),
+      clear: ref.clearTimeout.bind(ref)
     });
   }
   function checksumSamples(samples) {
@@ -1791,6 +2019,7 @@ var FingerprintJSBotBlocker = (() => {
       mode: "active",
       stability: "volatile",
       weight: 0.85,
+      hashable: false,
       async collect(context) {
         const globalRef = context.global || {};
         const navigatorRef = context.navigator || {};
@@ -2066,6 +2295,7 @@ var FingerprintJSBotBlocker = (() => {
       mode: "passive",
       stability: "stable",
       weight: 0.65,
+      hashable: false,
       collect(context) {
         const navigatorRef = context.navigator;
         const globalRef = context.global;
@@ -2270,6 +2500,7 @@ var FingerprintJSBotBlocker = (() => {
         mode: collector.mode,
         stability: collector.stability,
         weight: collector.weight,
+        hashable: collector.hashable,
         status,
         value: canonicalValue,
         durationMs: elapsedSince(startedAt),
@@ -2284,6 +2515,7 @@ var FingerprintJSBotBlocker = (() => {
         mode: collector.mode,
         stability: collector.stability,
         weight: collector.weight,
+        hashable: collector.hashable,
         status: error && error.code === "collector_timeout" ? "timeout" : "error",
         value: null,
         durationMs: elapsedSince(startedAt),
@@ -2308,6 +2540,7 @@ var FingerprintJSBotBlocker = (() => {
       mode: collector.mode,
       stability: collector.stability,
       weight: collector.weight,
+      hashable: collector.hashable,
       status: "skipped",
       value: null,
       durationMs: 0,
@@ -2323,6 +2556,7 @@ var FingerprintJSBotBlocker = (() => {
       mode: component.mode,
       stability: component.stability,
       weight: component.weight,
+      hashable: component.hashable,
       status: component.status,
       value: component.value,
       durationMs: component.durationMs,
@@ -2348,15 +2582,13 @@ var FingerprintJSBotBlocker = (() => {
   }
 
   // src/confidence.js
-  function createHashPayload(components, namespace, salt) {
+  function createHashPayload(components, namespace, salt, identityOptions = {}) {
     const values = {};
-    for (const component of components) {
-      if (component.status === "ok") {
-        values[component.id] = {
-          version: component.version,
-          value: component.value
-        };
-      }
+    for (const component of selectIdentityComponents(components, identityOptions)) {
+      values[component.id] = {
+        version: component.version,
+        value: component.value
+      };
     }
     return {
       schemaVersion: SCHEMA_VERSION,
@@ -2365,33 +2597,89 @@ var FingerprintJSBotBlocker = (() => {
       values
     };
   }
-  function calculateConfidence(components, collectors, policy) {
-    let possibleWeight = 0;
-    let collectedWeight = 0;
-    let entropy = 0;
+  function selectIdentityComponents(components, identityOptions = {}) {
+    const allowCollectors = toStringSet(identityOptions.allowCollectors);
+    const denyCollectors = toStringSet(identityOptions.denyCollectors);
+    const includeNonHashable = Boolean(identityOptions.includeNonHashable);
+    return components.filter((component) => component && component.status === "ok" && (includeNonHashable || component.hashable !== false) && (allowCollectors.size === 0 || allowCollectors.has(component.id)) && !denyCollectors.has(component.id));
+  }
+  function calculateConfidence(components, collectors, policy, identityOptions = {}) {
+    let possibleCollectionWeight = 0;
+    let collectedCollectionWeight = 0;
+    let possibleIdentityWeight = 0;
+    let collectedIdentityWeight = 0;
+    let identityEntropy = 0;
     const allowedCollectorIds = new Set(
       collectors.filter((collector) => isCollectorAllowed(collector, policy)).map((collector) => collector.id)
     );
+    const identityCollectorIds = new Set(collectors.filter((collector) => allowedCollectorIds.has(collector.id) && isIdentityCollector(collector, identityOptions)).map((collector) => collector.id));
     for (const collector of collectors) {
-      if (allowedCollectorIds.has(collector.id)) {
-        possibleWeight += collector.weight;
+      if (!allowedCollectorIds.has(collector.id)) {
+        continue;
+      }
+      possibleCollectionWeight += collector.weight;
+      if (identityCollectorIds.has(collector.id)) {
+        possibleIdentityWeight += collector.weight;
       }
     }
     for (const component of components) {
       if (component.status !== "ok") {
         continue;
       }
-      collectedWeight += component.weight;
-      entropy += component.weight * SENSITIVITY_RANK[component.sensitivity];
+      collectedCollectionWeight += component.weight;
+      if (identityCollectorIds.has(component.id)) {
+        collectedIdentityWeight += component.weight;
+        identityEntropy += component.weight * SENSITIVITY_RANK[component.sensitivity];
+      }
     }
-    const score = possibleWeight > 0 ? round(clamp(collectedWeight / possibleWeight, 0, 1), 3) : 0;
+    const collectionScore = possibleCollectionWeight > 0 ? round(clamp(collectedCollectionWeight / possibleCollectionWeight, 0, 1), 3) : 0;
+    const completeness = possibleIdentityWeight > 0 ? clamp(collectedIdentityWeight / possibleIdentityWeight, 0, 1) : 0;
+    const platformScore = estimatePlatformScore(components);
+    const score = round(completeness * platformScore, 3);
     return Object.freeze({
       score,
       level: score >= 0.75 ? "high" : score >= 0.45 ? "medium" : "low",
-      entropy: round(entropy, 3),
-      collectedWeight: round(collectedWeight, 3),
-      possibleWeight: round(possibleWeight, 3)
+      entropy: round(identityEntropy, 3),
+      collectedWeight: round(collectedIdentityWeight, 3),
+      possibleWeight: round(possibleIdentityWeight, 3),
+      platformScore: round(platformScore, 3),
+      collectionQuality: Object.freeze({
+        score: collectionScore,
+        level: collectionScore >= 0.75 ? "high" : collectionScore >= 0.45 ? "medium" : "low",
+        collectedWeight: round(collectedCollectionWeight, 3),
+        possibleWeight: round(possibleCollectionWeight, 3)
+      })
     });
+  }
+  function isIdentityCollector(collector, identityOptions) {
+    const allowCollectors = toStringSet(identityOptions.allowCollectors);
+    const denyCollectors = toStringSet(identityOptions.denyCollectors);
+    return (identityOptions.includeNonHashable || collector.hashable !== false) && (allowCollectors.size === 0 || allowCollectors.has(collector.id)) && !denyCollectors.has(collector.id);
+  }
+  function toStringSet(value) {
+    return Object.freeze(new Set(Array.isArray(value) ? value.map(String) : []));
+  }
+  function estimatePlatformScore(components) {
+    const runtime = components.find((component) => component.id === "runtime.browser" && component.status === "ok");
+    const value = runtime && runtime.value && typeof runtime.value === "object" ? runtime.value : null;
+    const userAgent = String(value && value.userAgent || "");
+    const platform = String(value && value.platform || value && value.userAgentData && value.userAgentData.platform || "");
+    if (!value) {
+      return 1;
+    }
+    if (/Android/u.test(userAgent) || platform === "Android") {
+      return 0.4;
+    }
+    if (/Safari\//u.test(userAgent) && !/Chrome\/|Chromium\/|Edg\//u.test(userAgent)) {
+      return /Mac/u.test(platform) ? 0.5 : 0.3;
+    }
+    if (/^Win/u.test(platform)) {
+      return 0.6;
+    }
+    if (/^Mac/u.test(platform)) {
+      return 0.5;
+    }
+    return 0.7;
   }
 
   // src/crypto.js
@@ -2520,9 +2808,21 @@ var FingerprintJSBotBlocker = (() => {
       loadDelayMs: Number.isFinite(options.loadDelayMs) ? Math.max(0, Number(options.loadDelayMs)) : DEFAULT_LOAD_DELAY_MS,
       storage,
       storageKey: `fingerprintjs-botblocker:${namespace}:state`,
+      identity: normalizeIdentityOptions(options.identity),
       consent: options.consent || null,
       now: typeof options.now === "function" ? options.now : Date.now
     });
+  }
+  function normalizeIdentityOptions(value) {
+    const identity = value && typeof value === "object" ? value : {};
+    return Object.freeze({
+      includeNonHashable: Boolean(identity.includeNonHashable),
+      allowCollectors: normalizeStringArray(identity.allowCollectors),
+      denyCollectors: normalizeStringArray(identity.denyCollectors)
+    });
+  }
+  function normalizeStringArray(value) {
+    return Object.freeze(Array.isArray(value) ? value.map(String) : []);
   }
 
   // src/client.js
@@ -2584,9 +2884,10 @@ var FingerprintJSBotBlocker = (() => {
       });
     }
     const components = await collectPreparedComponents(collectors, policy, runtime, clientOptions.collectorTimeoutMs, preparedValues);
-    const payload = createHashPayload(components, clientOptions.namespace, clientOptions.salt);
-    const confidence = calculateConfidence(components, collectors, policy);
-    const okComponentCount = components.filter((component) => component.status === "ok").length;
+    const identityComponents = selectIdentityComponents(components, clientOptions.identity);
+    const payload = createHashPayload(components, clientOptions.namespace, clientOptions.salt, clientOptions.identity);
+    const confidence = calculateConfidence(components, collectors, policy, clientOptions.identity);
+    const okComponentCount = identityComponents.length;
     const hash = okComponentCount > 0 ? await hashValue(canonicalStringify(payload), runtime) : null;
     const visitorId = hash ? hash.value : null;
     const storage = await updateStorageState(clientOptions.storage, clientOptions.storageKey, visitorId, createdAt);
@@ -2603,6 +2904,8 @@ var FingerprintJSBotBlocker = (() => {
         profile: clientOptions.profile,
         durationMs: elapsedSince(startedAt),
         hashAlgorithm: hash ? hash.algorithm : null,
+        identityComponents: identityComponents.map((component) => component.id),
+        reportOnlyComponents: components.filter((component) => component.status === "ok" && !identityComponents.includes(component)).map((component) => component.id),
         blocked: false,
         reason: null,
         storage
@@ -2620,7 +2923,14 @@ var FingerprintJSBotBlocker = (() => {
         level: "low",
         entropy: 0,
         collectedWeight: 0,
-        possibleWeight: 0
+        possibleWeight: 0,
+        platformScore: 0,
+        collectionQuality: Object.freeze({
+          score: 0,
+          level: "low",
+          collectedWeight: 0,
+          possibleWeight: 0
+        })
       }),
       components: Object.freeze([]),
       meta: Object.freeze({
@@ -2629,6 +2939,8 @@ var FingerprintJSBotBlocker = (() => {
         profile: details.profile,
         durationMs: details.durationMs,
         hashAlgorithm: null,
+        identityComponents: Object.freeze([]),
+        reportOnlyComponents: Object.freeze([]),
         blocked: true,
         reason: details.reason,
         storage: Object.freeze({ enabled: false, status: "skipped" })
@@ -2644,12 +2956,18 @@ var FingerprintJSBotBlocker = (() => {
     const namespace = String(options.namespace || "default");
     const salt = String(options.salt || "");
     const validComponents = components.filter((component) => component && typeof component === "object");
-    const okComponentCount = validComponents.filter((component) => component.status === "ok").length;
+    const identityOptions = {
+      includeNonHashable: Boolean(options.includeNonHashable),
+      allowCollectors: options.allowCollectors,
+      denyCollectors: options.denyCollectors
+    };
+    const identityComponents = selectIdentityComponents(validComponents, identityOptions);
+    const okComponentCount = identityComponents.length;
     if (okComponentCount === 0) {
       return Object.freeze({ visitorId: null, hashAlgorithm: null, namespace });
     }
     const runtime = createRuntimeContext({ consent: null, now: Date.now }, context);
-    const payload = createHashPayload(validComponents, namespace, salt);
+    const payload = createHashPayload(validComponents, namespace, salt, identityOptions);
     const hash = await hashValue(canonicalStringify(payload), runtime);
     return Object.freeze({ visitorId: hash.value, hashAlgorithm: hash.algorithm, namespace });
   }

@@ -2,6 +2,12 @@ import { detectBrowserQuirks, getSuppressionReason, shouldSuppressSignal } from 
 import { createCollector } from './core.js';
 import { checksumString, safeNumber } from './shared.js';
 
+const NOISY_WEBGL_EXTENSIONS = Object.freeze([
+  'EXT_disjoint_timer_query',
+  'EXT_disjoint_timer_query_webgl2',
+  'WEBGL_debug_shaders'
+]);
+
 export function createWebglCollector() {
   return createCollector({
     id: 'webgl.renderer',
@@ -20,6 +26,9 @@ export function createWebglCollector() {
       const debugInfo = gl.getExtension ? gl.getExtension('WEBGL_debug_renderer_info') : null;
 
       return {
+        contextAttributes: readContextAttributes(gl),
+        drawingBufferWidth: safeNumber(gl.drawingBufferWidth),
+        drawingBufferHeight: safeNumber(gl.drawingBufferHeight),
         vendor: getGlParameter(gl, gl.VENDOR),
         renderer: getGlParameter(gl, gl.RENDERER),
         version: getGlParameter(gl, gl.VERSION),
@@ -47,12 +56,20 @@ export function createWebglExtensionsCollector() {
       }
 
       const extensions = typeof gl.getSupportedExtensions === 'function' ? gl.getSupportedExtensions() : null;
-      const extensionList = Array.isArray(extensions) ? extensions.slice().sort() : [];
+      const rawExtensionList = Array.isArray(extensions) ? extensions.slice().map(String).sort() : [];
+      const extensionList = rawExtensionList.filter((extension) => !NOISY_WEBGL_EXTENSIONS.includes(extension));
+      const omittedExtensions = rawExtensionList.filter((extension) => NOISY_WEBGL_EXTENSIONS.includes(extension));
       return {
         extensions: extensionList,
+        omittedExtensions,
         maxTextureSize: getGlParameter(gl, gl.MAX_TEXTURE_SIZE),
         maxCombinedTextureImageUnits: getGlParameter(gl, gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS),
         maxRenderbufferSize: getGlParameter(gl, gl.MAX_RENDERBUFFER_SIZE),
+        maxCubeMapTextureSize: getGlParameter(gl, gl.MAX_CUBE_MAP_TEXTURE_SIZE),
+        maxVertexAttribs: getGlParameter(gl, gl.MAX_VERTEX_ATTRIBS),
+        maxVertexTextureImageUnits: getGlParameter(gl, gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS),
+        maxVaryingVectors: getGlParameter(gl, gl.MAX_VARYING_VECTORS),
+        maxViewportDims: normalizeNumberArray(getGlParameter(gl, gl.MAX_VIEWPORT_DIMS)),
         aliasedLineWidthRange: normalizeNumberArray(getGlParameter(gl, gl.ALIASED_LINE_WIDTH_RANGE)),
         aliasedPointSizeRange: normalizeNumberArray(getGlParameter(gl, gl.ALIASED_POINT_SIZE_RANGE))
       };
@@ -117,6 +134,37 @@ function createCanvas(context, width, height) {
   return canvas;
 }
 
+function readContextAttributes(gl) {
+  if (typeof gl.getContextAttributes !== 'function') {
+    return null;
+  }
+
+  try {
+    const attributes = gl.getContextAttributes();
+    if (!attributes || typeof attributes !== 'object') {
+      return null;
+    }
+
+    return {
+      alpha: safeBoolean(attributes.alpha),
+      antialias: safeBoolean(attributes.antialias),
+      depth: safeBoolean(attributes.depth),
+      desynchronized: safeBoolean(attributes.desynchronized),
+      failIfMajorPerformanceCaveat: safeBoolean(attributes.failIfMajorPerformanceCaveat),
+      powerPreference: typeof attributes.powerPreference === 'string' ? attributes.powerPreference : null,
+      premultipliedAlpha: safeBoolean(attributes.premultipliedAlpha),
+      preserveDrawingBuffer: safeBoolean(attributes.preserveDrawingBuffer),
+      stencil: safeBoolean(attributes.stencil)
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
+function safeBoolean(value) {
+  return typeof value === 'boolean' ? value : null;
+}
+
 function getGlParameter(gl, parameter) {
   try {
     const value = gl.getParameter(parameter);
@@ -167,7 +215,7 @@ function renderText(canvas, canvasContext) {
   canvasContext.fillText('FingerprintJS by BotBlocker 0.1', 2, 18);
   canvasContext.fillStyle = 'rgba(102, 204, 0, 0.65)';
   canvasContext.fillText('mwmw 12345', 4, 48);
-  return summarizeCanvas(canvas);
+  return summarizeCanvas(canvas, true);
 }
 
 function resetCanvas(canvas, width, height) {
@@ -175,9 +223,16 @@ function resetCanvas(canvas, width, height) {
   canvas.height = height;
 }
 
-function summarizeCanvas(canvas) {
+function summarizeCanvas(canvas, verifyStable = false) {
   try {
     const dataUrl = canvas.toDataURL();
+    if (verifyStable && canvas.toDataURL() !== dataUrl) {
+      return {
+        status: 'unstable',
+        reason: 'canvas_noise_detected'
+      };
+    }
+
     return {
       status: 'ok',
       length: dataUrl.length,
