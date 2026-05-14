@@ -10,6 +10,15 @@ FingerprintJS by BotBlocker is a browser fingerprinting and device intelligence 
 
 The runtime has no production dependencies, performs no network calls by default, and exposes privacy-aware collector policies, deterministic identity hashing, report-only risk signals, bot evidence, private-mode indicators, confidence scoring, storage state, and compact diagnostics.
 
+## Core Advantages
+
+- Stable visitor identity is separated from risk and diagnostic evidence. Volatile, bot, private-mode, tamper, storage, network, and capability signals can enrich reports without changing the default `visitorId`.
+- Backend verification is included through `@botblocker/fingerprintjs/server`: replay protection, client hash recomputation, server-only hashing, explainable backend reports, and pluggable network risk checks.
+- Tamper, bot, and private-mode evidence is returned as scored, explainable signals instead of a single opaque identifier.
+- Use-case presets provide practical defaults for privacy-first analytics, login risk, checkout risk, bot defense, and fraud defense.
+- The SDK is self-hostable, dependency-free at runtime, works through ESM, CommonJS, and a direct script tag, and performs no network calls unless the host application sends results to its own backend.
+- Output formats cover product integration, backend scoring, and debugging: compact report, dense ID analysis report, full raw report, and standalone JSON inspector.
+
 ## Install And Build
 
 ```bash
@@ -35,7 +44,7 @@ Each package entry supports ESM `import` and CommonJS `require`. Browser builds 
 ## ESM Usage
 
 ```js
-import { hashComponents, loadClient } from '@botblocker/fingerprintjs';
+import { createAnalysisReport, hashComponents, loadClient } from '@botblocker/fingerprintjs';
 
 const client = await loadClient({
   namespace: 'my-product',
@@ -54,13 +63,15 @@ const result = await client.get({
 const bot = result.components.find((component) => component.id === 'browser.botDetection');
 const privacy = result.components.find((component) => component.id === 'browser.privacyMode');
 const recalculated = await hashComponents(result.components, { namespace: 'my-product' });
+const analysis = createAnalysisReport(result, { recalculatedHash: recalculated });
 
 console.log({
   visitorId: result.visitorId,
   bot: bot?.value?.verdict,
   privateMode: privacy?.value?.verdict,
   confidence: result.confidence,
-  hashMatches: recalculated.visitorId === result.visitorId
+  hashMatches: recalculated.visitorId === result.visitorId,
+  analysis
 });
 ```
 
@@ -190,15 +201,16 @@ Collection confidence and identity confidence are both exposed. `confidence.scor
 
 ## Reports And Demo
 
-The browser demo in [examples/browser.html](examples/browser.html) renders two reports side by side and tracks repeated runs:
+The browser demo in [examples/browser.html](examples/browser.html) renders three reports side by side and tracks repeated runs:
 
-- Compact report: concise identity, risk, quality, calculations, and every capability with status.
-- Full report: raw SDK result, recalculated hash, derived calculations, and every component value/error.
+- Compact report: concise identity, risk, quality, calculations, and every capability with status, role, hashability, weight, duration, value summary, and error state.
+- ID analysis report: shortest dense format for backend scoring. It contains `id`, request metadata, confidence, aggregate weights, hash checks, risk verdicts, and every component's role, status, weight, raw result, and error.
+- Full report: raw SDK result, recalculated hash, all-signals hash, derived calculations, stability data, explainable report, ID analysis report, and every component value/error.
 - Stability view: baseline visitor ID, current visitor ID, identity input count, report-only count, changed identity/report-only components, and recent run history.
 
-Both reports include all collected capabilities and calculation data. Use the `extended` profile in the demo to exercise the full collector pack and confirm that report-only changes do not move the stable visitor ID.
+All demo outputs are generated from the same `IdentifyResult`. The compact and ID analysis formats include every collected capability; the full format additionally embeds the raw result and explainable report. Use the `extended` profile in the demo to exercise the full collector pack and confirm that report-only changes do not move the stable visitor ID.
 
-The debug inspector in [examples/inspector.html](examples/inspector.html) accepts an `IdentifyResult` or full demo report JSON and explains identity components, report-only components, tamper, bot, and private-mode evidence.
+The debug inspector in [examples/inspector.html](examples/inspector.html) accepts an `IdentifyResult`, full demo report JSON, or ID analysis report JSON and explains identity components, report-only components, tamper, bot, and private-mode evidence.
 
 ## Verification
 

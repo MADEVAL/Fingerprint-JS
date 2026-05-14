@@ -18,6 +18,7 @@ test('package exports are importable from Node after build', {
 
   assert.equal(typeof core.createClient, 'function');
   assert.equal(typeof cjs.createClient, 'function');
+  assert.equal(typeof core.createAnalysisReport, 'function');
   assert.equal(typeof core.createExplainableReport, 'function');
   assert.equal(typeof core.createStabilityMonitor, 'function');
   assert.equal(typeof core.createUseCasePreset, 'function');

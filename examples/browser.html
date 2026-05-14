@@ -157,7 +157,7 @@
 
       .reports {
         display: grid;
-        grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 14px;
       }
 
@@ -250,6 +250,7 @@
         <div class="metric"><span>Report Only</span><strong id="metric-report-only">pending</strong></div>
         <div class="metric"><span>Bot</span><strong id="metric-bot">pending</strong></div>
         <div class="metric"><span>Private Mode</span><strong id="metric-privacy">pending</strong></div>
+        <div class="metric"><span>Tamper</span><strong id="metric-tamper">pending</strong></div>
         <div class="metric"><span>Confidence</span><strong id="metric-confidence">pending</strong></div>
       </div>
 
@@ -257,6 +258,10 @@
         <section>
           <div class="panel-head"><h2>Compact report</h2><span>summary plus every capability</span></div>
           <pre id="compact-output">Ready</pre>
+        </section>
+        <section>
+          <div class="panel-head"><h2>ID analysis</h2><span>short ID, weights, and results</span></div>
+          <pre id="analysis-output">Ready</pre>
         </section>
         <section>
           <div class="panel-head"><h2>Full report</h2><span>raw result plus calculations</span></div>
@@ -269,11 +274,12 @@
     <script>
       const namespace = location.hostname || 'botblocker-demo';
       const consent = { granted: true, purpose: 'security-demo' };
-      const state = { client: null, profile: null, baselineVisitorId: null, previousComponents: null, history: [] };
+      const state = { client: null, profile: null, monitor: null };
       const profileInput = document.querySelector('#profile');
       const identifyButton = document.querySelector('#identify');
       const statusOutput = document.querySelector('#status');
       const compactOutput = document.querySelector('#compact-output');
+      const analysisOutput = document.querySelector('#analysis-output');
       const fullOutput = document.querySelector('#full-output');
       const metrics = {
         visitor: document.querySelector('#metric-visitor'),
@@ -283,6 +289,7 @@
         reportOnly: document.querySelector('#metric-report-only'),
         bot: document.querySelector('#metric-bot'),
         privacy: document.querySelector('#metric-privacy'),
+        tamper: document.querySelector('#metric-tamper'),
         confidence: document.querySelector('#metric-confidence')
       };
 
@@ -290,6 +297,7 @@
         runIdentity().catch((error) => {
           statusOutput.textContent = 'Error';
           compactOutput.textContent = JSON.stringify({ error: normalizeError(error) }, null, 2);
+          analysisOutput.textContent = compactOutput.textContent;
           fullOutput.textContent = compactOutput.textContent;
           identifyButton.disabled = false;
         });
@@ -306,11 +314,13 @@
         const allSignalsHash = await FingerprintJSBotBlocker.hashComponents(result.components, { namespace, includeNonHashable: true });
         const stability = updateStability(result, recalculated, allSignalsHash);
         const calculations = buildCalculations(result, recalculated);
+        const analysis = FingerprintJSBotBlocker.createAnalysisReport(result, { recalculatedHash: recalculated, allSignalsHash });
         const compact = buildCompactReport(result, recalculated, allSignalsHash, calculations, stability);
-        const full = buildFullReport(result, recalculated, allSignalsHash, calculations, stability);
+        const full = buildFullReport(result, recalculated, allSignalsHash, calculations, stability, analysis);
 
         renderMetrics(compact);
         compactOutput.textContent = JSON.stringify(compact, null, 2);
+        analysisOutput.textContent = JSON.stringify(analysis, null, 2);
         fullOutput.textContent = JSON.stringify(full, null, 2);
         statusOutput.textContent = `Done in ${result.meta.durationMs} ms`;
         identifyButton.disabled = false;
@@ -322,9 +332,7 @@
         }
 
         state.profile = profile;
-        state.baselineVisitorId = null;
-        state.previousComponents = null;
-        state.history = [];
+        state.monitor = FingerprintJSBotBlocker.createStabilityMonitor({ historyLimit: 8 });
         state.client = FingerprintJSBotBlocker.createClient({
           namespace,
           profile,
@@ -338,6 +346,7 @@
       function buildCompactReport(result, recalculated, allSignalsHash, calculations, stability) {
         const bot = componentValue(result, 'browser.botDetection');
         const privacy = componentValue(result, 'browser.privacyMode');
+        const tamper = componentValue(result, 'browser.tamperEvidence');
 
         return {
           product: 'FingerprintJS by BotBlocker',
@@ -356,7 +365,8 @@
           stability,
           risk: {
             bot: pickRisk(bot),
-            privateMode: pickRisk(privacy)
+            privateMode: pickRisk(privacy),
+            tamper: pickRisk(tamper)
           },
           quality: result.confidence,
           hash: {
@@ -368,14 +378,15 @@
             allSignalsDiffers: allSignalsHash.visitorId !== result.visitorId
           },
           calculations,
-          capabilities: result.components.map(toCompactCapability)
+          capabilities: result.components.map((component) => toCompactCapability(component, result))
         };
       }
 
-      function buildFullReport(result, recalculated, allSignalsHash, calculations, stability) {
+      function buildFullReport(result, recalculated, allSignalsHash, calculations, stability, analysis) {
+        const generatedAt = new Date().toISOString();
         return {
           product: 'FingerprintJS by BotBlocker',
-          generatedAt: new Date().toISOString(),
+          generatedAt,
           botBlockerSecurity: 'https://botblocker.top',
           compactMeaning: {
             visitorId: 'Deterministic identifier derived only from identity-safe components.',
@@ -383,12 +394,15 @@
             entropy: 'Weighted usefulness estimate based on component sensitivity.',
             botDetection: 'Evidence score, not a standalone enforcement decision.',
             privacyMode: 'Likelihood indicators, not a universal incognito flag.',
+            tamperEvidence: 'Browser integrity evidence that stays report-only by default.',
             reportOnlyComponents: 'Risk and volatile signals stay in reports without changing visitorId.'
           },
           recalculatedHash: recalculated,
           allSignalsHash,
           stability,
           calculations,
+          explainableReport: FingerprintJSBotBlocker.createExplainableReport(result, { generatedAt, includeValues: true }),
+          analysisReport: analysis,
           result,
           components: result.components.map((component) => ({
             id: component.id,
@@ -418,6 +432,9 @@
         const okComponents = components.filter((component) => component.status === 'ok');
         const activeComponents = components.filter((component) => component.mode === 'active');
         const passiveComponents = components.filter((component) => component.mode === 'passive');
+        const identitySet = new Set(result.meta.identityComponents);
+        const identityComponents = okComponents.filter((component) => identitySet.has(component.id));
+        const reportOnlyComponents = okComponents.filter((component) => !identitySet.has(component.id));
         const totalWeight = sum(components.map((component) => component.weight));
         const okWeight = sum(okComponents.map((component) => component.weight));
         const durationSum = sum(components.map((component) => component.durationMs));
@@ -441,9 +458,15 @@
           weights: {
             totalWeight: round(totalWeight),
             okWeight: round(okWeight),
+            identityWeight: round(sum(identityComponents.map((component) => component.weight))),
+            reportOnlyWeight: round(sum(reportOnlyComponents.map((component) => component.weight))),
             collectedWeight: result.confidence.collectedWeight,
             possibleWeight: result.confidence.possibleWeight,
             okWeightRatio: round(okWeight / (totalWeight || 1))
+          },
+          identity: {
+            identityComponents: result.meta.identityComponents,
+            reportOnlyComponents: result.meta.reportOnlyComponents
           },
           modes: {
             active: summarizeSubset(activeComponents),
@@ -483,7 +506,8 @@
         };
       }
 
-      function toCompactCapability(component) {
+      function toCompactCapability(component, result) {
+        const usedForVisitorId = result.meta.identityComponents.includes(component.id);
         return {
           id: component.id,
           category: component.category,
@@ -491,7 +515,9 @@
           sensitivity: component.sensitivity,
           mode: component.mode,
           stability: component.stability,
-          role: component.hashable === false ? 'report-only' : 'identity',
+          role: usedForVisitorId ? 'identity' : 'report-only',
+          usedForVisitorId,
+          hashable: component.hashable,
           weight: component.weight,
           durationMs: component.durationMs,
           valueSummary: summarizeValue(component.value),
@@ -558,58 +584,28 @@
         metrics.reportOnly.textContent = String(compact.identity.reportOnlyComponents.length);
         metrics.bot.textContent = `${compact.risk.bot.verdict} (${compact.risk.bot.score ?? 'n/a'})`;
         metrics.privacy.textContent = `${compact.risk.privateMode.verdict} (${compact.risk.privateMode.score ?? 'n/a'})`;
+        metrics.tamper.textContent = `${compact.risk.tamper.verdict} (${compact.risk.tamper.score ?? 'n/a'})`;
         metrics.confidence.textContent = `${compact.quality.level} ${compact.quality.score}`;
         metrics.bot.className = compact.risk.bot.verdict === 'bot' ? 'risk-bot' : compact.risk.bot.verdict === 'suspicious' ? 'risk-warn' : 'risk-ok';
         metrics.privacy.className = compact.risk.privateMode.verdict === 'likely_private' ? 'risk-warn' : 'risk-ok';
+        metrics.tamper.className = compact.risk.tamper.verdict === 'tampered' ? 'risk-bot' : compact.risk.tamper.verdict === 'suspicious' ? 'risk-warn' : 'risk-ok';
         metrics.stable.className = compact.identity.matchesBaseline ? 'risk-ok' : 'risk-warn';
       }
 
       function updateStability(result, recalculated, allSignalsHash) {
-        if (!state.baselineVisitorId) {
-          state.baselineVisitorId = result.visitorId;
+        if (!state.monitor) {
+          state.monitor = FingerprintJSBotBlocker.createStabilityMonitor({ historyLimit: 8 });
         }
 
-        const changed = diffComponents(state.previousComponents, result.components, result.meta.identityComponents);
-        const entry = {
-          index: state.history.length + 1,
-          createdAt: result.createdAt,
-          visitorId: result.visitorId,
-          matchesBaseline: result.visitorId === state.baselineVisitorId,
-          identityChanged: changed.identity,
-          reportOnlyChanged: changed.reportOnly,
-          recalculatedMatches: recalculated.visitorId === result.visitorId,
-          allSignalsDiffers: allSignalsHash.visitorId !== result.visitorId
-        };
-
-        state.history = [entry, ...state.history].slice(0, 8);
-        state.previousComponents = result.components;
+        const observed = state.monitor.observe(result);
 
         return {
-          baselineVisitorId: state.baselineVisitorId,
-          currentVisitorId: result.visitorId,
-          matchesBaseline: result.visitorId === state.baselineVisitorId,
-          runCount: state.history.length,
-          lastChangedComponents: changed,
-          history: state.history
-        };
-      }
-
-      function diffComponents(previous, current, identityIds) {
-        if (!previous) {
-          return { identity: [], reportOnly: [] };
-        }
-
-        const previousById = new Map(previous.map((component) => [component.id, component]));
-        const identitySet = new Set(identityIds);
-        const changed = { identity: [], reportOnly: [] };
-        for (const component of current) {
-          const before = previousById.get(component.id);
-          const changedValue = !before || before.status !== component.status || JSON.stringify(before.value) !== JSON.stringify(component.value);
-          if (changedValue) {
-            (identitySet.has(component.id) ? changed.identity : changed.reportOnly).push(component.id);
+          ...observed,
+          hash: {
+            recalculatedMatches: recalculated.visitorId === result.visitorId,
+            allSignalsDiffers: allSignalsHash.visitorId !== result.visitorId
           }
-        }
-        return changed;
+        };
       }
 
       function normalizeError(error) {

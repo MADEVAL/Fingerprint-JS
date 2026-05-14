@@ -1,4 +1,4 @@
-import { componentsToDebugString, createApiFeaturesCollector, createBotDetectionCollector, createClient, createCollector, createCssFeaturesCollector, createExplainableReport, createNetworkConnectionCollector, createPerformanceMemoryCollector, createPrivacyModeCollector, createStabilityMonitor, createTamperEvidenceCollector, createUseCasePreset, createWebglPrecisionCollector, hashComponents, listUseCasePresets, loadClient, type IdentifyResult } from '@botblocker/fingerprintjs';
+import { componentsToDebugString, createAnalysisReport, createApiFeaturesCollector, createBotDetectionCollector, createClient, createCollector, createCssFeaturesCollector, createExplainableReport, createNetworkConnectionCollector, createPerformanceMemoryCollector, createPrivacyModeCollector, createStabilityMonitor, createTamperEvidenceCollector, createUseCasePreset, createWebglPrecisionCollector, hashComponents, listUseCasePresets, loadClient, type IdentifyResult } from '@botblocker/fingerprintjs';
 import { createBrowserCollectorPack, createDefaultCollectors, createNavigatorPropertiesCollector } from '@botblocker/fingerprintjs/collectors';
 import { createPolicy } from '@botblocker/fingerprintjs/policy';
 import { createMemoryReplayStore, createReplayToken, createServerHash, createStaticNetworkAdapter, evaluateNetworkRisk, verifyFingerprintResult } from '@botblocker/fingerprintjs/server';
@@ -53,10 +53,11 @@ async function identify(): Promise<IdentifyResult> {
   await client.prepare({ consent: { granted: true } });
   const result = await client.get({ consent: { granted: true } });
   componentsToDebugString(result.components);
-  await hashComponents(result.components, { namespace: 'types', includeNonHashable: true, denyCollectors: ['types.latency'] });
+  const allSignalsHash = await hashComponents(result.components, { namespace: 'types', includeNonHashable: true, denyCollectors: ['types.latency'] });
   result.meta.identityComponents.join(',');
   result.meta.reportOnlyComponents.join(',');
   result.confidence.collectionQuality.score.toFixed(2);
+  createAnalysisReport(result, { allSignalsHash });
   createExplainableReport(result, { includeValues: false });
   monitor.observe(result);
   const token = await createReplayToken({ secret: 'secret', nonce: 'nonce' });

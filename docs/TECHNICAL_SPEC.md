@@ -118,7 +118,13 @@ Use-case presets combine profile, policy, and identity defaults for common deplo
 }
 ```
 
-The browser demo additionally derives compact and full reports from this result. Both reports include identity, risk, quality, timing, hash recalculation, storage state, component totals, status counts, sensitivity counts, mode counts, category counts, every capability status, baseline visitor ID, current visitor ID, changed identity/report-only components, and recent run history.
+The browser demo additionally derives compact, ID analysis, and full reports from this result:
+
+- Compact report: concise identity, risk, quality, hash checks, calculations, stability, and every capability with role, hashability, status, weight, duration, value summary, and error state.
+- ID analysis report: shortest dense scoring format from `createAnalysisReport()`. It includes visitor ID, request metadata, confidence, aggregate weights, hash checks, risk verdicts, and every component's role, status, weight, raw result, and error.
+- Full report: raw `IdentifyResult`, recalculated hash, all-signals hash, derived calculations, stability data, explainable report, ID analysis report, and every component value/error.
+
+All three demo outputs are derived from the same `IdentifyResult`, so component counts, identity/report-only roles, hash checks, and risk summaries stay consistent across formats.
 
 ## Hashing And Identity
 
@@ -171,6 +177,13 @@ The `@botblocker/fingerprintjs/server` subpath is backend-oriented and is not pa
 - network risk adapter support for proxy, VPN, Tor, hosting, and datacenter evidence.
 
 The network adapter intentionally does not make built-in network calls. Host applications provide their own IP intelligence source and pass normalized flags into `evaluateNetworkRisk()` or `verifyFingerprintResult()`.
+
+## Public Report APIs
+
+- `createExplainableReport(result, options)`: produces a readable report with identity/report-only reasons, risk summaries, and optional component values.
+- `createAnalysisReport(result, options)`: produces the shortest dense scoring report with ID, confidence, aggregate weights, optional hash checks, risk verdicts, and raw component results.
+- `explainComponent(component, identityComponents, options)`: explains a single component role and reason.
+- [examples/inspector.html](../examples/inspector.html) accepts raw `IdentifyResult`, full demo report JSON, and ID analysis report JSON for local debugging.
 
 ## Browser Support Matrix
 

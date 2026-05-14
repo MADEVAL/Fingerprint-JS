@@ -195,6 +195,7 @@ export function createStabilityMonitor(options?: { historyLimit?: number }): {
   snapshot(): Record<string, unknown>;
 };
 export function diffComponents(previousComponents?: ComponentResult[], currentComponents?: ComponentResult[], identityComponentIds?: string[]): Record<string, unknown>;
+export function createAnalysisReport(result: IdentifyResult, options?: { recalculatedHash?: HashComponentsResult; allSignalsHash?: HashComponentsResult }): Record<string, unknown>;
 export function createExplainableReport(result: IdentifyResult, options?: { generatedAt?: string; includeValues?: boolean }): Record<string, unknown>;
 export function explainComponent(component: ComponentResult, identityComponents?: string[] | Set<string>, options?: { includeValues?: boolean }): Record<string, unknown>;
 export function canonicalStringify(value: unknown): string;

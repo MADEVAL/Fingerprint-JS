@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createClient,
   createCollector,
+  createAnalysisReport,
   createExplainableReport,
   createStabilityMonitor,
   createTamperEvidenceCollector,
@@ -152,6 +153,39 @@ test('explainable report separates identity, report-only, and risk evidence', ()
   assert.equal(minimalReport.identity.namespace, 'default');
   assert.deepEqual(minimalReport.identity.identityComponents, []);
   assert.throws(() => createExplainableReport(null), /IdentifyResult-like/u);
+});
+
+test('analysis report keeps id, weights, hashes, risk, and raw component results dense', () => {
+  const result = makeResult('id', [
+    component('stable', 'ok', { stable: true }, true),
+    component('risk', 'ok', { verdict: 'ok', score: 0, evidence: [] }, false),
+    { ...component('bad', 'error', null, true), weight: Number.NaN, error: { code: 'failed', message: 'No value' } },
+    component('browser.tamperEvidence', 'ok', { verdict: 'clean', score: 0, confidence: 'high', evidence: [] }, false)
+  ], ['stable']);
+  const report = createAnalysisReport(result, {
+    recalculatedHash: { visitorId: 'id', hashAlgorithm: 'sha256:test', namespace: 'suite' },
+    allSignalsHash: { visitorId: 'all', hashAlgorithm: 'sha256:test', namespace: 'suite' }
+  });
+
+  assert.equal(report.id, 'id');
+  assert.equal(report.totals.identity, 1);
+  assert.equal(report.totals.reportOnly, 3);
+  assert.equal(report.weights.total, 3);
+  assert.equal(report.weights.identity, 1);
+  assert.equal(report.hash.recalculatedMatches, true);
+  assert.equal(report.hash.allSignalsDiffers, true);
+  assert.equal(report.risk.tamper.verdict, 'clean');
+  assert.deepEqual(report.components.find((item) => item.id === 'stable').result, { stable: true });
+  assert.equal(report.components.find((item) => item.id === 'bad').result, null);
+  assert.equal(report.components.find((item) => item.id === 'bad').error.code, 'failed');
+
+  const minimal = createAnalysisReport({ components: [], meta: {} });
+  assert.equal(minimal.id, null);
+  assert.equal(minimal.namespace, 'default');
+  assert.equal(minimal.profile, null);
+  assert.equal(minimal.confidence, null);
+  assert.equal(minimal.weights.collected, null);
+  assert.equal(minimal.hash.recalculatedMatches, null);
 });
 
 test('use-case presets merge into client policy and identity options', async () => {

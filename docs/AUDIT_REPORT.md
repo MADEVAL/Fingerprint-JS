@@ -36,6 +36,7 @@ This audit covers FingerprintJS by BotBlocker source code, package metadata, gen
 - Script-tag global API through `FingerprintJSBotBlocker`.
 - Compact and full browser demo reports with baseline/current visitor stability tracking.
 - Standalone debug inspector for pasted result JSON.
+- Three consistent demo output formats: compact report, dense ID analysis report, and full raw report.
 
 ## Built-In Signal Coverage
 

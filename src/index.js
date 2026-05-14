@@ -9,4 +9,4 @@ export { hashComponents } from './hash-components.js';
 export { loadClient } from './loader.js';
 export { createPolicy } from './policy.js';
 export { USE_CASE_PRESETS, createUseCasePreset, listUseCasePresets } from './presets.js';
-export { createExplainableReport, explainComponent } from './report.js';
+export { createAnalysisReport, createExplainableReport, explainComponent } from './report.js';

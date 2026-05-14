@@ -10,11 +10,14 @@ test('standalone browser bundle identifies from the script-tag demo', async ({ p
   await page.getByRole('button', { name: 'Identify' }).click();
 
   const compactOutput = page.locator('#compact-output');
+  const analysisOutput = page.locator('#analysis-output');
   const fullOutput = page.locator('#full-output');
   await expect(compactOutput).toContainText('"visitorId"');
+  await expect(analysisOutput).toContainText('"weights"');
   await expect(fullOutput).toContainText('"components"');
 
   const compact = JSON.parse(await compactOutput.textContent());
+  const analysis = JSON.parse(await analysisOutput.textContent());
   const full = JSON.parse(await fullOutput.textContent());
 
   expect(compact.product).toBe('FingerprintJS by BotBlocker');
@@ -22,10 +25,20 @@ test('standalone browser bundle identifies from the script-tag demo', async ({ p
   expect(compact.identity.profile).toBe('extended');
   expect(compact.capabilities.length).toBeGreaterThan(0);
   expect(compact.calculations.componentTotals.total).toBe(compact.capabilities.length);
+  expect(compact.risk.tamper.verdict).toBeTruthy();
+  expect(compact.capabilities.every((component) => typeof component.weight === 'number' && typeof component.usedForVisitorId === 'boolean')).toBe(true);
+  expect(analysis.id).toBe(compact.identity.visitorId);
+  expect(analysis.components.length).toBe(compact.capabilities.length);
+  expect(analysis.components.every((component) => Object.hasOwn(component, 'weight') && Object.hasOwn(component, 'result'))).toBe(true);
+  expect(analysis.hash.recalculatedMatches).toBe(true);
   expect(full.result.meta.profile).toBe('extended');
   expect(full.result.meta.blocked).toBe(false);
   expect(full.components.length).toBe(compact.capabilities.length);
+  expect(full.result.components.length).toBe(compact.capabilities.length);
+  expect(full.explainableReport.components.length).toBe(compact.capabilities.length);
+  expect(full.analysisReport.components.length).toBe(compact.capabilities.length);
   expect(full.calculations.hash.matches).toBe(true);
+  expect(full.analysisReport.id).toBe(compact.identity.visitorId);
   expect(compact.identity.matchesBaseline).toBe(true);
   expect(compact.identity.identityComponents.length).toBeGreaterThan(0);
 

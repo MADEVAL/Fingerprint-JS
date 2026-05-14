@@ -36,6 +36,7 @@ __export(src_exports, {
   VERSION: () => VERSION,
   canonicalStringify: () => canonicalStringify,
   componentsToDebugString: () => componentsToDebugString,
+  createAnalysisReport: () => createAnalysisReport,
   createApiFeaturesCollector: () => createApiFeaturesCollector,
   createBotDetectionCollector: () => createBotDetectionCollector,
   createBrowserCollectorPack: () => createBrowserCollectorPack,
@@ -3251,6 +3252,29 @@ function createExplainableReport(result, options = {}) {
     components
   });
 }
+function createAnalysisReport(result, options = {}) {
+  assertResult2(result);
+  const identityComponents = new Set(result.meta && Array.isArray(result.meta.identityComponents) ? result.meta.identityComponents : []);
+  const components = Object.freeze(result.components.map((component) => analysisComponent(component, identityComponents)));
+  const risk = buildRiskSummary(result.components);
+  return Object.freeze({
+    id: result.visitorId || null,
+    requestId: result.requestId || null,
+    namespace: result.namespace || "default",
+    profile: result.meta && result.meta.profile ? result.meta.profile : null,
+    confidence: result.confidence || null,
+    weights: summarizeWeights(result.components, result.confidence || {}, identityComponents),
+    totals: Object.freeze({
+      total: components.length,
+      ok: countStatus(result.components, "ok"),
+      identity: components.filter((component) => component.role === "identity").length,
+      reportOnly: components.filter((component) => component.role === "report-only").length
+    }),
+    hash: buildHashSummary(result, options),
+    risk,
+    components
+  });
+}
 function explainComponent(component, identityComponents = [], options = {}) {
   const identitySet = identityComponents instanceof Set ? identityComponents : new Set(identityComponents);
   const role = identitySet.has(component.id) ? "identity" : "report-only";
@@ -3282,6 +3306,54 @@ function explainReason(component, role) {
     return "stable_identity_input";
   }
   return component.hashable === false ? "report_only_collector" : "excluded_by_identity_policy";
+}
+function analysisComponent(component, identityComponents) {
+  return Object.freeze({
+    id: component.id,
+    role: identityComponents.has(component.id) ? "identity" : "report-only",
+    status: component.status,
+    weight: component.weight,
+    category: component.category,
+    sensitivity: component.sensitivity,
+    mode: component.mode,
+    stability: component.stability,
+    hashable: component.hashable,
+    durationMs: component.durationMs,
+    result: component.status === "ok" ? component.value : null,
+    error: component.error || null
+  });
+}
+function summarizeWeights(components, confidence, identityComponents) {
+  const okComponents = components.filter((component) => component.status === "ok");
+  const identityOkComponents = okComponents.filter((component) => identityComponents.has(component.id));
+  const reportOnlyOkComponents = okComponents.filter((component) => !identityComponents.has(component.id));
+  return Object.freeze({
+    total: round2(sumWeights(components)),
+    ok: round2(sumWeights(okComponents)),
+    identity: round2(sumWeights(identityOkComponents)),
+    reportOnly: round2(sumWeights(reportOnlyOkComponents)),
+    collected: Number.isFinite(confidence.collectedWeight) ? confidence.collectedWeight : null,
+    possible: Number.isFinite(confidence.possibleWeight) ? confidence.possibleWeight : null,
+    qualityCollected: confidence.collectionQuality && Number.isFinite(confidence.collectionQuality.collectedWeight) ? confidence.collectionQuality.collectedWeight : null,
+    qualityPossible: confidence.collectionQuality && Number.isFinite(confidence.collectionQuality.possibleWeight) ? confidence.collectionQuality.possibleWeight : null
+  });
+}
+function buildHashSummary(result, options) {
+  const recalculated = options.recalculatedHash || null;
+  const allSignals = options.allSignalsHash || null;
+  return Object.freeze({
+    algorithm: result.meta && result.meta.hashAlgorithm ? result.meta.hashAlgorithm : null,
+    recalculatedVisitorId: recalculated ? recalculated.visitorId : null,
+    recalculatedMatches: recalculated ? recalculated.visitorId === result.visitorId : null,
+    allSignalsVisitorId: allSignals ? allSignals.visitorId : null,
+    allSignalsDiffers: allSignals ? allSignals.visitorId !== result.visitorId : null
+  });
+}
+function sumWeights(components) {
+  return components.reduce((total, component) => total + (Number.isFinite(component.weight) ? Number(component.weight) : 0), 0);
+}
+function round2(value) {
+  return Math.round(Number(value || 0) * 1e3) / 1e3;
 }
 function summarizeValue(value) {
   if (value === null) {
@@ -3322,6 +3394,7 @@ function countStatus(components, status) {
   VERSION,
   canonicalStringify,
   componentsToDebugString,
+  createAnalysisReport,
   createApiFeaturesCollector,
   createBotDetectionCollector,
   createBrowserCollectorPack,

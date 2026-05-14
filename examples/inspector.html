@@ -116,12 +116,19 @@
       function inspect() {
         try {
           const parsed = JSON.parse(input.value);
-          const result = parsed.result || parsed;
+          const result = parsed.result || parsed.analysisReport || parsed;
           const components = Array.isArray(result.components) ? result.components : [];
           const identity = new Set(result.meta && Array.isArray(result.meta.identityComponents) ? result.meta.identityComponents : []);
-          const reportOnly = result.meta && Array.isArray(result.meta.reportOnlyComponents) ? result.meta.reportOnlyComponents : [];
+          for (const component of components) {
+            if (component.role === 'identity') {
+              identity.add(component.id);
+            }
+          }
+          const reportOnly = result.meta && Array.isArray(result.meta.reportOnlyComponents)
+            ? result.meta.reportOnlyComponents
+            : components.filter((component) => component.role === 'report-only').map((component) => component.id);
           output.textContent = JSON.stringify({
-            visitorId: result.visitorId || null,
+            visitorId: result.visitorId || result.id || null,
             namespace: result.namespace || null,
             confidence: result.confidence || null,
             identityComponents: Array.from(identity),
@@ -144,7 +151,7 @@
 
       function riskValue(components, id) {
         const component = components.find((item) => item.id === id && item.status === 'ok');
-        return component && component.value ? component.value : null;
+        return component && (component.value || component.result) ? component.value || component.result : null;
       }
 
       function escapeHtml(value) {
