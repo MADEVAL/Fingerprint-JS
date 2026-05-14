@@ -2259,6 +2259,106 @@ function hasFeature(globalRef, key) {
   }
 }
 
+// src/collectors/tamper-evidence.js
+function createTamperEvidenceCollector() {
+  return createCollector({
+    id: "browser.tamperEvidence",
+    version: "1",
+    category: "risk",
+    sensitivity: "medium",
+    mode: "passive",
+    stability: "volatile",
+    weight: 0.9,
+    hashable: false,
+    collect(context) {
+      return evaluateTamperEvidence(context);
+    }
+  });
+}
+function evaluateTamperEvidence(context = {}) {
+  const windowRef = getWindowRef(context);
+  const navigatorRef = context.navigator || windowRef.navigator || null;
+  const documentRef = context.document || windowRef.document || null;
+  const screenRef = context.screen || windowRef.screen || null;
+  const evidence = [];
+  if (!isNativeFunction(Function.prototype.toString)) {
+    addEvidence(evidence, "function_to_string_patched", "high", "Function.prototype.toString does not look native.");
+  }
+  if (navigatorRef && navigatorRef.webdriver === true) {
+    addEvidence(evidence, "webdriver_enabled", "high", "navigator.webdriver is true.");
+  }
+  const permissionsQuery = navigatorRef && navigatorRef.permissions && navigatorRef.permissions.query;
+  if (permissionsQuery && !isNativeFunction(permissionsQuery)) {
+    addEvidence(evidence, "permissions_query_patched", "medium", "navigator.permissions.query does not look native.");
+  }
+  const userAgent = String(navigatorRef && navigatorRef.userAgent || "");
+  const platform = String(navigatorRef && navigatorRef.platform || "");
+  const uaPlatform = String(navigatorRef && navigatorRef.userAgentData && navigatorRef.userAgentData.platform || "");
+  if (uaPlatform && platform && uaPlatform !== platform && !isCompatiblePlatform(platform, uaPlatform)) {
+    addEvidence(evidence, "platform_mismatch", "medium", "navigator.platform and userAgentData.platform disagree.", { platform, userAgentDataPlatform: uaPlatform });
+  }
+  if (/Android/u.test(userAgent) && uaPlatform && uaPlatform !== "Android") {
+    addEvidence(evidence, "android_client_hint_mismatch", "medium", "Android user agent disagrees with client hints platform.", { userAgentDataPlatform: uaPlatform });
+  }
+  if (navigatorRef && Array.isArray(navigatorRef.languages) && navigatorRef.language && !navigatorRef.languages.includes(navigatorRef.language)) {
+    addEvidence(evidence, "language_mismatch", "low", "navigator.language is absent from navigator.languages.");
+  }
+  const pluginLength = safeNumber(navigatorRef && navigatorRef.plugins && navigatorRef.plugins.length);
+  if (/Chrome\/|Chromium\/|Edg\//u.test(userAgent) && pluginLength === 0) {
+    addEvidence(evidence, "chromium_empty_plugins", "low", "Chromium-like browser reports an empty plugin list.");
+  }
+  const screenWidth = safeNumber(screenRef && screenRef.width);
+  const screenHeight = safeNumber(screenRef && screenRef.height);
+  if (screenWidth === 0 || screenHeight === 0) {
+    addEvidence(evidence, "zero_screen", "medium", "Screen dimensions contain zero values.");
+  }
+  const canvasToDataUrl = getCanvasToDataUrl(documentRef);
+  if (canvasToDataUrl && !isNativeFunction(canvasToDataUrl)) {
+    addEvidence(evidence, "canvas_to_data_url_patched", "medium", "Canvas toDataURL does not look native.");
+  }
+  const score = calculateTamperScore(evidence);
+  return Object.freeze({
+    verdict: score >= 0.7 ? "tampered" : score >= 0.3 ? "suspicious" : "clean",
+    score,
+    confidence: evidence.some((item) => item.severity === "high") ? "high" : evidence.length > 0 ? "medium" : "low",
+    evidence: Object.freeze(evidence)
+  });
+}
+function addEvidence(evidence, code, severity, message, detail = null) {
+  evidence.push(Object.freeze({ code, severity, message, detail }));
+}
+function calculateTamperScore(evidence) {
+  const total = evidence.reduce((score, item) => score + severityWeight(item.severity), 0);
+  return Math.min(1, Math.round(total * 1e3) / 1e3);
+}
+function severityWeight(severity) {
+  return severity === "high" ? 0.45 : severity === "medium" ? 0.25 : 0.1;
+}
+function isNativeFunction(value) {
+  if (typeof value !== "function") {
+    return false;
+  }
+  try {
+    return /\[native code\]/u.test(Function.prototype.toString.call(value));
+  } catch (_error) {
+    return false;
+  }
+}
+function isCompatiblePlatform(platform, uaPlatform) {
+  return platform.startsWith("Win") && uaPlatform === "Windows" || platform.startsWith("Mac") && uaPlatform === "macOS" || platform.startsWith("Linux") && uaPlatform === "Linux";
+}
+function getCanvasToDataUrl(documentRef) {
+  if (!documentRef || typeof documentRef.createElement !== "function") {
+    return null;
+  }
+  try {
+    const canvas = documentRef.createElement("canvas");
+    return canvas && canvas.toDataURL ? canvas.toDataURL : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
 // src/collectors/defaults.js
 function createDefaultCollectors() {
   return [
@@ -2278,6 +2378,7 @@ function createDefaultCollectors() {
     createStorageCapabilitiesCollector(),
     createBotDetectionCollector(),
     createPrivacyModeCollector(),
+    createTamperEvidenceCollector(),
     createApiFeaturesCollector(),
     createCssFeaturesCollector(),
     createNetworkConnectionCollector(),
@@ -2680,6 +2781,61 @@ function componentsToDebugString(components) {
   }).join("\n");
 }
 
+// src/presets.js
+var USE_CASE_PRESETS = Object.freeze({
+  "privacy-first": freezePreset({
+    profile: "strict",
+    policy: { requireConsent: true, redactValues: true },
+    identity: { denyCollectors: ["browser.tamperEvidence", "browser.botDetection", "browser.privacyMode"] }
+  }),
+  "analytics-lite": freezePreset({
+    profile: "balanced",
+    policy: { includeActive: false, includeUnstable: false },
+    identity: { denyCollectors: ["network.connection", "performance.memory"] }
+  }),
+  "login-risk": freezePreset({
+    profile: "extended",
+    policy: { includeActive: true, includeUnstable: true },
+    identity: { denyCollectors: ["browser.tamperEvidence", "browser.botDetection", "browser.privacyMode"] }
+  }),
+  "checkout-risk": freezePreset({
+    profile: "extended",
+    policy: { includeActive: true, includeUnstable: true },
+    identity: { denyCollectors: ["browser.applePay", "browser.privateClickMeasurement", "browser.domBlockers"] }
+  }),
+  "bot-defense": freezePreset({
+    profile: "extended",
+    policy: { includeActive: true, includeUnstable: true },
+    identity: { denyCollectors: ["browser.tamperEvidence", "browser.botDetection"] }
+  }),
+  "fraud-defense": freezePreset({
+    profile: "extended",
+    policy: { includeActive: true, includeUnstable: true },
+    identity: { includeNonHashable: false }
+  })
+});
+function listUseCasePresets() {
+  return Object.freeze(Object.keys(USE_CASE_PRESETS));
+}
+function createUseCasePreset(name, overrides = {}) {
+  const preset = USE_CASE_PRESETS[String(name)];
+  if (!preset) {
+    throw new TypeError(`Unknown use-case preset: ${name}`);
+  }
+  return freezePreset({
+    profile: overrides.profile || preset.profile,
+    policy: { ...preset.policy, ...overrides.policy || {} },
+    identity: { ...preset.identity, ...overrides.identity || {} }
+  });
+}
+function freezePreset(preset) {
+  return Object.freeze({
+    profile: preset.profile,
+    policy: Object.freeze({ ...preset.policy }),
+    identity: Object.freeze({ ...preset.identity })
+  });
+}
+
 // src/runtime.js
 function createRuntimeContext(options, context = {}) {
   const globalRef = context.global || getGlobal();
@@ -2735,7 +2891,8 @@ function waitForRuntimeIdle(globalRef, delayMs) {
 
 // src/options.js
 function normalizeClientOptions(options) {
-  const profile = options.profile || "balanced";
+  const useCasePreset = options.useCase ? createUseCasePreset(options.useCase) : null;
+  const profile = options.profile || useCasePreset && useCasePreset.profile || "balanced";
   if (!PROFILE_PRESETS[profile]) {
     throw new TypeError(`Unknown privacy profile: ${profile}`);
   }
@@ -2749,13 +2906,13 @@ function normalizeClientOptions(options) {
     loadDelayMs: Number.isFinite(options.loadDelayMs) ? Math.max(0, Number(options.loadDelayMs)) : DEFAULT_LOAD_DELAY_MS,
     storage,
     storageKey: `fingerprintjs-botblocker:${namespace}:state`,
-    identity: normalizeIdentityOptions(options.identity),
+    policy: Object.freeze({ ...useCasePreset && useCasePreset.policy || {}, ...options.policy || {} }),
+    identity: normalizeIdentityOptions({ ...useCasePreset && useCasePreset.identity || {}, ...options.identity || {} }),
     consent: options.consent || null,
     now: typeof options.now === "function" ? options.now : Date.now
   });
 }
-function normalizeIdentityOptions(value) {
-  const identity = value && typeof value === "object" ? value : {};
+function normalizeIdentityOptions(identity) {
   return Object.freeze({
     includeNonHashable: Boolean(identity.includeNonHashable),
     allowCollectors: normalizeStringArray(identity.allowCollectors),
@@ -2770,7 +2927,7 @@ function normalizeStringArray(value) {
 function createClient(options = {}) {
   const clientOptions = normalizeClientOptions(options);
   const collectors = normalizeCollectors(options.collectors || createDefaultCollectors());
-  const policy = createPolicy(clientOptions.profile, options.policy || {});
+  const policy = createPolicy(clientOptions.profile, clientOptions.policy);
   const state = { preparedAt: null, preparedValues: /* @__PURE__ */ new Map() };
   const client = {
     version: VERSION,
@@ -2889,6 +3046,90 @@ function createBlockedResult(details) {
   });
 }
 
+// src/drift.js
+function createStabilityMonitor(options = {}) {
+  const historyLimit = Number.isFinite(options.historyLimit) ? Math.max(1, Number(options.historyLimit)) : 10;
+  let baselineVisitorId = null;
+  let previousComponents = null;
+  let history = [];
+  return Object.freeze({
+    observe(result) {
+      assertResult(result);
+      if (!baselineVisitorId) {
+        baselineVisitorId = result.visitorId;
+      }
+      const drift = diffComponents(previousComponents || [], result.components, result.meta && result.meta.identityComponents);
+      const entry = Object.freeze({
+        index: history.length + 1,
+        visitorId: result.visitorId,
+        matchesBaseline: result.visitorId === baselineVisitorId,
+        createdAt: result.createdAt,
+        identityChanged: drift.identityChanged,
+        reportOnlyChanged: drift.reportOnlyChanged
+      });
+      history = Object.freeze([entry, ...history].slice(0, historyLimit));
+      previousComponents = result.components;
+      return Object.freeze({
+        baselineVisitorId,
+        currentVisitorId: result.visitorId,
+        matchesBaseline: result.visitorId === baselineVisitorId,
+        runCount: history.length,
+        drift,
+        history
+      });
+    },
+    reset() {
+      baselineVisitorId = null;
+      previousComponents = null;
+      history = [];
+    },
+    snapshot() {
+      return Object.freeze({ baselineVisitorId, history });
+    }
+  });
+}
+function diffComponents(previousComponents = [], currentComponents = [], identityComponentIds = []) {
+  const previousById = new Map(previousComponents.map((component) => [component.id, component]));
+  const currentById = new Map(currentComponents.map((component) => [component.id, component]));
+  const identityIds = new Set(Array.isArray(identityComponentIds) ? identityComponentIds : []);
+  const identityChanged = [];
+  const reportOnlyChanged = [];
+  const added = [];
+  const removed = [];
+  for (const component of currentComponents) {
+    const previous = previousById.get(component.id);
+    if (!previous) {
+      added.push(component.id);
+    }
+    if (!previous || componentSignature(previous) !== componentSignature(component)) {
+      (identityIds.has(component.id) ? identityChanged : reportOnlyChanged).push(component.id);
+    }
+  }
+  for (const component of previousComponents) {
+    if (!currentById.has(component.id)) {
+      removed.push(component.id);
+      (identityIds.has(component.id) ? identityChanged : reportOnlyChanged).push(component.id);
+    }
+  }
+  return Object.freeze({
+    identityChanged: Object.freeze(unique(identityChanged)),
+    reportOnlyChanged: Object.freeze(unique(reportOnlyChanged)),
+    added: Object.freeze(added),
+    removed: Object.freeze(removed)
+  });
+}
+function assertResult(result) {
+  if (!result || typeof result !== "object" || !Array.isArray(result.components)) {
+    throw new TypeError("Stability monitor requires an IdentifyResult-like object.");
+  }
+}
+function componentSignature(component) {
+  return canonicalStringify({ status: component.status, version: component.version, value: component.value, error: component.error });
+}
+function unique(values) {
+  return Array.from(new Set(values));
+}
+
 // src/hash-components.js
 async function hashComponents(components, options = {}, context = {}) {
   if (!Array.isArray(components)) {
@@ -2919,8 +3160,103 @@ async function loadClient(options = {}, context = {}) {
   await client.prepare(context);
   return client;
 }
+
+// src/report.js
+function createExplainableReport(result, options = {}) {
+  assertResult2(result);
+  const identityComponents = new Set(result.meta && Array.isArray(result.meta.identityComponents) ? result.meta.identityComponents : []);
+  const components = Object.freeze(result.components.map((component) => explainComponent(component, identityComponents, options)));
+  const risk = buildRiskSummary(result.components);
+  return Object.freeze({
+    product: "FingerprintJS by BotBlocker",
+    generatedAt: options.generatedAt || (/* @__PURE__ */ new Date()).toISOString(),
+    identity: Object.freeze({
+      visitorId: result.visitorId || null,
+      namespace: result.namespace || "default",
+      confidence: result.confidence,
+      identityComponents: Object.freeze(Array.from(identityComponents)),
+      reportOnlyComponents: Object.freeze(result.meta && Array.isArray(result.meta.reportOnlyComponents) ? result.meta.reportOnlyComponents.slice() : [])
+    }),
+    risk,
+    summary: Object.freeze({
+      total: result.components.length,
+      ok: countStatus(result.components, "ok"),
+      reportOnly: components.filter((component) => component.role === "report-only").length,
+      identity: components.filter((component) => component.role === "identity").length,
+      tamperVerdict: risk.tamper.verdict,
+      botVerdict: risk.bot.verdict,
+      privateModeVerdict: risk.privateMode.verdict
+    }),
+    components
+  });
+}
+function explainComponent(component, identityComponents = [], options = {}) {
+  const identitySet = identityComponents instanceof Set ? identityComponents : new Set(identityComponents);
+  const role = identitySet.has(component.id) ? "identity" : "report-only";
+  const value = options.includeValues ? component.value : summarizeValue(component.value);
+  return Object.freeze({
+    id: component.id,
+    role,
+    reason: explainReason(component, role),
+    status: component.status,
+    category: component.category,
+    sensitivity: component.sensitivity,
+    stability: component.stability,
+    hashable: component.hashable,
+    durationMs: component.durationMs,
+    value,
+    error: component.error
+  });
+}
+function assertResult2(result) {
+  if (!result || typeof result !== "object" || !Array.isArray(result.components)) {
+    throw new TypeError("Explainable report requires an IdentifyResult-like object.");
+  }
+}
+function explainReason(component, role) {
+  if (component.status !== "ok") {
+    return `not_used_status_${component.status}`;
+  }
+  if (role === "identity") {
+    return "stable_identity_input";
+  }
+  return component.hashable === false ? "report_only_collector" : "excluded_by_identity_policy";
+}
+function summarizeValue(value) {
+  if (value === null) {
+    return null;
+  }
+  if (Array.isArray(value)) {
+    return Object.freeze({ type: "array", length: value.length });
+  }
+  if (typeof value === "object") {
+    return Object.freeze({ type: "object", keys: Object.freeze(Object.keys(value).sort()) });
+  }
+  return Object.freeze({ type: typeof value, value });
+}
+function buildRiskSummary(components) {
+  return Object.freeze({
+    bot: pickRisk(components, "browser.botDetection"),
+    privateMode: pickRisk(components, "browser.privacyMode"),
+    tamper: pickRisk(components, "browser.tamperEvidence")
+  });
+}
+function pickRisk(components, id) {
+  const component = components.find((item) => item.id === id && item.status === "ok");
+  const value = component && component.value && typeof component.value === "object" ? component.value : null;
+  return Object.freeze({
+    verdict: value && value.verdict ? value.verdict : "unavailable",
+    score: value && Number.isFinite(value.score) ? value.score : null,
+    confidence: value && value.confidence ? value.confidence : "none",
+    evidence: Object.freeze(value && Array.isArray(value.evidence) ? value.evidence : [])
+  });
+}
+function countStatus(components, status) {
+  return components.filter((component) => component.status === status).length;
+}
 export {
   PROFILE_PRESETS,
+  USE_CASE_PRESETS,
   VERSION,
   canonicalStringify,
   componentsToDebugString,
@@ -2931,12 +3267,19 @@ export {
   createCollector,
   createCssFeaturesCollector,
   createDefaultCollectors,
+  createExplainableReport,
   createNetworkConnectionCollector,
   createPerformanceMemoryCollector,
   createPolicy,
   createPrivacyModeCollector,
+  createStabilityMonitor,
+  createTamperEvidenceCollector,
+  createUseCasePreset,
   createWebglPrecisionCollector,
+  diffComponents,
+  explainComponent,
   hashComponents,
   hashValue,
+  listUseCasePresets,
   loadClient
 };

@@ -26,6 +26,11 @@
       "import": "./dist/policy.mjs",
       "require": "./dist/policy.cjs"
     },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.mjs",
+      "require": "./dist/server.cjs"
+    },
     "./storage": {
       "types": "./dist/storage.d.ts",
       "import": "./dist/storage.mjs",

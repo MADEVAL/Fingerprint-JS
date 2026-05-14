@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 
 const demoUrl = pathToFileURL(resolve('examples/browser.html')).href;
+const inspectorUrl = pathToFileURL(resolve('examples/inspector.html')).href;
 
 test('standalone browser bundle identifies from the script-tag demo', async ({ page }) => {
   await page.goto(demoUrl);
@@ -34,4 +35,27 @@ test('standalone browser bundle identifies from the script-tag demo', async ({ p
   expect(secondCompact.identity.visitorId).toBe(compact.identity.visitorId);
   expect(secondCompact.stability.runCount).toBe(2);
   expect(secondCompact.stability.history[0].matchesBaseline).toBe(true);
+});
+
+test('debug inspector explains pasted result JSON', async ({ page }) => {
+  await page.goto(inspectorUrl);
+  await page.locator('#input').fill(JSON.stringify({
+    visitorId: 'abc',
+    namespace: 'suite',
+    confidence: { score: 1 },
+    meta: { identityComponents: ['stable'], reportOnlyComponents: ['browser.tamperEvidence'] },
+    components: [
+      { id: 'stable', status: 'ok', hashable: true, stability: 'stable' },
+      { id: 'browser.tamperEvidence', status: 'ok', hashable: false, stability: 'volatile', value: { verdict: 'tampered', score: 1, evidence: [] } }
+    ]
+  }));
+  await page.getByRole('button', { name: 'Inspect' }).click();
+  const output = page.locator('#output');
+  await expect(output).toContainText('"visitorId": "abc"');
+  await expect(output).toContainText('"role": "identity"');
+  await expect(output).toContainText('"verdict": "tampered"');
+
+  await page.locator('#input').fill('{bad');
+  await page.getByRole('button', { name: 'Inspect' }).click();
+  await expect(output).toContainText('Invalid JSON');
 });

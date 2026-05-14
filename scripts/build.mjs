@@ -16,6 +16,7 @@ await build({
     index: resolve(root, 'src/index.js'),
     collectors: resolve(root, 'src/collectors/index.js'),
     policy: resolve(root, 'src/policy.js'),
+    server: resolve(root, 'src/server.js'),
     storage: resolve(root, 'src/storage-public.js')
   },
   outdir: distPath,
@@ -33,6 +34,7 @@ await build({
     index: resolve(root, 'src/index.js'),
     collectors: resolve(root, 'src/collectors/index.js'),
     policy: resolve(root, 'src/policy.js'),
+    server: resolve(root, 'src/server.js'),
     storage: resolve(root, 'src/storage-public.js')
   },
   outdir: distPath,
@@ -75,6 +77,7 @@ async function copyTypes() {
     ['types/index.d.ts', 'dist/index.d.ts'],
     ['types/collectors.d.ts', 'dist/collectors.d.ts'],
     ['types/policy.d.ts', 'dist/policy.d.ts'],
+    ['types/server.d.ts', 'dist/server.d.ts'],
     ['types/storage.d.ts', 'dist/storage.d.ts']
   ];
 

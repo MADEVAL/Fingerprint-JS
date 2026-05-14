@@ -12,7 +12,7 @@ This audit covers FingerprintJS by BotBlocker source code, package metadata, gen
 - TypeScript declarations are validated through package-level imports.
 - Node tests enforce 100% line, branch, and function coverage for `src/**/*.js`.
 - Browser tests run against Chromium, Firefox, and WebKit through Playwright.
-- The minified browser bundle is checked against a 55 KB budget.
+- The minified browser bundle is checked against a 65 KB budget.
 - CI runs install, browser setup, and `npm run verify` on push and pull request.
 
 ## Current Feature Coverage
@@ -29,8 +29,13 @@ This audit covers FingerprintJS by BotBlocker source code, package metadata, gen
 - Product-side ID recalculation through `hashComponents()`.
 - Identity-safe hashing keeps report-only risk and volatile diagnostics out of the default visitor ID.
 - `meta.identityComponents` and `meta.reportOnlyComponents` expose the exact hash/report split.
+- Tamper evidence collector reports patched APIs and inconsistent runtime claims without entering the default identity hash.
+- Backend verifier package supports replay protection, server-only hashing, client hash recomputation, explainable reports, and network risk adapters.
+- Use-case policy presets cover privacy-first, analytics, login risk, checkout risk, bot defense, and fraud defense deployments.
+- Stability monitor tracks baseline/current visitor IDs and identity/report-only drift.
 - Script-tag global API through `FingerprintJSBotBlocker`.
 - Compact and full browser demo reports with baseline/current visitor stability tracking.
+- Standalone debug inspector for pasted result JSON.
 
 ## Built-In Signal Coverage
 
@@ -39,6 +44,7 @@ This audit covers FingerprintJS by BotBlocker source code, package metadata, gen
 - API feature support and CSS feature support.
 - Performance memory diagnostics.
 - Bot and automation evidence.
+- Tamper evidence.
 - Private-mode indicators.
 - Locale, date-time locale, and timezone.
 - Screen metrics, screen frame, and media preferences.
@@ -73,7 +79,8 @@ FingerprintJS by BotBlocker is suitable as a client-side signal layer for [BotBl
 ## Remaining Practical Work
 
 1. Calibrate bot and private-mode scoring against real product traffic before automated enforcement.
-2. Keep the 55 KB bundle budget under review as additional risk signals are added.
+2. Keep the 65 KB bundle budget under review as additional risk signals are added.
 3. Add release automation when publishing credentials and release policy are defined.
 4. Expand browser stability fixtures for product-specific flows and target browser versions.
 5. Run a production observation window before changing default identity collector membership.
+6. Connect the backend network adapter to a production IP intelligence provider before using proxy/VPN/datacenter evidence for enforcement.

@@ -21,6 +21,7 @@ import { createAudioBaseLatencyCollector, createAudioCollector } from './media.j
 import { createPrivacyModeCollector } from './privacy-mode.js';
 import { createBrowserRuntimeCollector, createClientHintsCollector, createNavigatorPropertiesCollector, createNodeRuntimeCollector } from './runtime.js';
 import { createStorageCapabilitiesCollector } from './storage-signals.js';
+import { createTamperEvidenceCollector } from './tamper-evidence.js';
 
 export function createDefaultCollectors() {
   return [
@@ -40,6 +41,7 @@ export function createDefaultCollectors() {
     createStorageCapabilitiesCollector(),
     createBotDetectionCollector(),
     createPrivacyModeCollector(),
+    createTamperEvidenceCollector(),
     createApiFeaturesCollector(),
     createCssFeaturesCollector(),
     createNetworkConnectionCollector(),

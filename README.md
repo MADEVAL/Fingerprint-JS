@@ -2,7 +2,7 @@
 
 [![Build](https://img.shields.io/badge/build-verified-brightgreen)](.github/workflows/ci.yml)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](package.json)
-[![Browser Bundle](https://img.shields.io/badge/browser%20bundle-%3C55KB-blue)](scripts/check-size.mjs)
+[![Browser Bundle](https://img.shields.io/badge/browser%20bundle-%3C65KB-blue)](scripts/check-size.mjs)
 [![Runtime](https://img.shields.io/badge/runtime-no%20production%20deps-success)](package.json)
 [![BotBlocker Security](https://img.shields.io/badge/BotBlocker-Security-0f766e)](https://botblocker.top)
 
@@ -27,6 +27,7 @@ Package entry points:
 - `@botblocker/fingerprintjs`
 - `@botblocker/fingerprintjs/collectors`
 - `@botblocker/fingerprintjs/policy`
+- `@botblocker/fingerprintjs/server`
 - `@botblocker/fingerprintjs/storage`
 
 Each package entry supports ESM `import` and CommonJS `require`. Browser builds expose the `FingerprintJSBotBlocker` global.
@@ -38,7 +39,7 @@ import { hashComponents, loadClient } from '@botblocker/fingerprintjs';
 
 const client = await loadClient({
   namespace: 'my-product',
-  profile: 'extended',
+  useCase: 'fraud-defense',
   storage: 'local',
   identity: {
     denyCollectors: ['browser.botDetection', 'browser.privacyMode'],
@@ -73,6 +74,36 @@ const client = createClient({
   collectors: [],
   storage: false
 });
+```
+
+## Backend Verification
+
+The server package adds replay protection, server-only hashing, result verification, and network risk adapters. It is intended for backend use and is not included in the browser global bundle.
+
+```js
+import {
+  createMemoryReplayStore,
+  createReplayToken,
+  verifyFingerprintResult
+} from '@botblocker/fingerprintjs/server';
+
+const replayStore = createMemoryReplayStore();
+const replayToken = await createReplayToken({
+  secret: process.env.FINGERPRINT_SERVER_SECRET,
+  purpose: 'login-risk'
+});
+
+const verification = await verifyFingerprintResult(resultFromBrowser, {
+  secret: process.env.FINGERPRINT_SERVER_SECRET,
+  replayToken,
+  replayStore,
+  network: { ip: request.ip },
+  networkAdapter: yourIpRiskAdapter
+});
+
+if (!verification.ok || verification.network?.verdict === 'high_risk_network') {
+  // Increase friction, deny the request, or send the event to BotBlocker Security.
+}
 ```
 
 ## Script-Tag Usage
@@ -114,6 +145,7 @@ Core signal groups:
 
 - Runtime: browser runtime, client hints, navigator properties, API feature support, CSS feature support, performance memory diagnostics, Node runtime.
 - Risk: bot/automation evidence, browser inconsistency evidence, and private-mode indicators.
+- Integrity: tamper evidence for patched browser APIs and inconsistent runtime claims.
 - Locale: language, calendar, numbering system, timezone, offset.
 - Display: screen metrics, screen frame, media preferences.
 - Hardware: concurrency, memory, touch support, architecture byte pattern.
@@ -127,6 +159,8 @@ Core signal groups:
 
 Bot detection is evidence-based. Strong signals such as WebDriver exposure, known automation globals, headless user agents, and impossible browser dimensions increase the score. Weaker inconsistencies such as language mismatches, impossible hardware ranges, plugin structure anomalies, patched permissions APIs, and empty Chromium globals are reported as evidence without being treated as proof by themselves.
 
+Tamper evidence is also evidence-based. `browser.tamperEvidence` reports patched native APIs, platform/client-hints mismatches, zero screen dimensions, suspicious language lists, and patched canvas serialization. It is report-only by default and should be combined with server verification before enforcement.
+
 Private-mode detection is intentionally conservative. Modern browsers do not expose a universal incognito flag, so `browser.privacyMode` reports likelihood, score, confidence, and evidence from storage availability, IndexedDB behavior, quota estimates, and persistence state.
 
 ## Privacy Profiles
@@ -136,6 +170,15 @@ Private-mode detection is intentionally conservative. Modern browsers do not exp
 - `extended`: active and high-sensitivity collectors for explicit security and fraud-prevention use cases.
 
 Policy controls include consent gates, sensitivity limits, active collector permission, allow/deny lists, category filters, and optional value redaction.
+
+Use-case presets are available through `useCase` or `createUseCasePreset()`:
+
+- `privacy-first`
+- `analytics-lite`
+- `login-risk`
+- `checkout-risk`
+- `bot-defense`
+- `fraud-defense`
 
 Identity controls are separate from policy controls:
 
@@ -155,6 +198,8 @@ The browser demo in [examples/browser.html](examples/browser.html) renders two r
 
 Both reports include all collected capabilities and calculation data. Use the `extended` profile in the demo to exercise the full collector pack and confirm that report-only changes do not move the stable visitor ID.
 
+The debug inspector in [examples/inspector.html](examples/inspector.html) accepts an `IdentifyResult` or full demo report JSON and explains identity components, report-only components, tamper, bot, and private-mode evidence.
+
 ## Verification
 
 `npm run verify` runs the full quality gate:
@@ -163,7 +208,7 @@ Both reports include all collected capabilities and calculation data. Use the `e
 - declaration validation through TypeScript;
 - Node tests with 100% line, branch, and function coverage for `src/**/*.js`;
 - Playwright browser tests in Chromium, Firefox, and WebKit;
-- minified browser bundle size gate under 55 KB.
+- minified browser bundle size gate under 65 KB.
 
 Additional docs:
 

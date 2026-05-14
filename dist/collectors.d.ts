@@ -49,4 +49,5 @@ export function createNetworkConnectionCollector(): Collector;
 export function createNavigatorPropertiesCollector(): Collector;
 export function createPerformanceMemoryCollector(): Collector;
 export function createPrivacyModeCollector(): Collector;
+export function createTamperEvidenceCollector(): Collector;
 export function createWebglPrecisionCollector(): Collector;

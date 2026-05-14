@@ -12,6 +12,8 @@ The SDK can run as an ESM package or as a standalone browser script. It does not
 - `dist/collectors.cjs`: CommonJS collector factory subpath.
 - `dist/policy.mjs`: policy subpath.
 - `dist/policy.cjs`: CommonJS policy subpath.
+- `dist/server.mjs`: backend verification subpath.
+- `dist/server.cjs`: CommonJS backend verification subpath.
 - `dist/storage.mjs`: storage subpath.
 - `dist/storage.cjs`: CommonJS storage subpath.
 - `dist/browser/fingerprintjs-botblocker.js`: readable browser global build.
@@ -58,6 +60,8 @@ Identity options are independent from collection policy:
 - `identity.denyCollectors`: exclude specific collector IDs from the hash.
 
 The default identity mode only hashes components whose collector is `hashable: true`. Volatile, risk, diagnostics, and capability signals can still be collected and returned without moving the stable visitor ID.
+
+Use-case presets combine profile, policy, and identity defaults for common deployments: `privacy-first`, `analytics-lite`, `login-risk`, `checkout-risk`, `bot-defense`, and `fraud-defense`.
 
 ## Result Shape
 
@@ -155,6 +159,19 @@ Known unstable sources are suppressed or normalized before they can affect ident
 - Fonts: expanded candidate list, iframe-isolated measurement, normalized widths, and preference presets.
 - WebGL: context attributes, drawing buffer size, renderer strings, extension filtering for noisy debug/timer extensions, limits, viewport dimensions, and shader precision.
 
+## Backend Verification Model
+
+The `@botblocker/fingerprintjs/server` subpath is backend-oriented and is not part of the script-tag global bundle. It provides:
+
+- replay tokens with nonce, expiry, purpose, and server-secret signature;
+- memory replay store for tests and small deployments;
+- server-only visitor hashing with a secret salt;
+- result verification that recomputes the client hash from components;
+- explainable report generation for backend logs;
+- network risk adapter support for proxy, VPN, Tor, hosting, and datacenter evidence.
+
+The network adapter intentionally does not make built-in network calls. Host applications provide their own IP intelligence source and pass normalized flags into `evaluateNetworkRisk()` or `verifyFingerprintResult()`.
+
 ## Browser Support Matrix
 
 - Chromium desktop and Android: full passive support, active collectors available when profile and policy allow them.
@@ -179,6 +196,7 @@ Risk and privacy:
 
 - `browser.botDetection`
 - `browser.privacyMode`
+- `browser.tamperEvidence`
 
 Locale and time:
 
@@ -238,6 +256,7 @@ Recommended backend payload:
 - `meta`
 - `components`
 - compact report summary from the demo formatter, when useful for logs or dashboards.
+- server verification report when replay, server hash, or network risk checks are enabled.
 
 ## Bot And Private-Mode Semantics
 
@@ -253,4 +272,4 @@ Recommended backend payload:
 - TypeScript declaration validation;
 - Node tests with 100% line, branch, and function coverage for `src/**/*.js`;
 - Playwright tests in Chromium, Firefox, and WebKit;
-- minified browser bundle size check under 55 KB.
+- minified browser bundle size check under 65 KB.

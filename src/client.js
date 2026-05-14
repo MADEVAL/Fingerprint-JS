@@ -14,7 +14,7 @@ import { updateStorageState } from './storage.js';
 export function createClient(options = {}) {
   const clientOptions = normalizeClientOptions(options);
   const collectors = normalizeCollectors(options.collectors || createDefaultCollectors());
-  const policy = createPolicy(clientOptions.profile, options.policy || {});
+  const policy = createPolicy(clientOptions.profile, clientOptions.policy);
   const state = { preparedAt: null, preparedValues: new Map() };
 
   const client = {

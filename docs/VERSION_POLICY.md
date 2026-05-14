@@ -6,6 +6,8 @@ The `IdentifyResult.meta.schemaVersion` and `IdentifyResult.meta.version` fields
 
 Patch releases should not intentionally change the default identity hash payload unless a browser stability fix requires it. Adding or changing report-only components does not have to change `visitorId`. When a stability fix changes an identity component value, the change should be documented in the audit report or release notes.
 
+Backend-only verifier changes follow the public API semantic version. Replay token format changes must update the token `version`; server hash payload changes must be documented because they can change backend-only visitor IDs even when client `visitorId` remains stable.
+
 Recommended migration flow for sensitive integrations:
 
 1. Run the old and new SDK versions in parallel for a short observation window.

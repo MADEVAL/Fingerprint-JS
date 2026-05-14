@@ -73,6 +73,7 @@ export interface ClientOptions {
   loadDelayMs?: number;
   collectors?: Array<CollectorDefinition | Collector>;
   policy?: PolicyOptions;
+  useCase?: UseCasePresetName;
   identity?: IdentityOptions;
   storage?: false | 'local' | StorageAdapter;
   consent?: boolean | ConsentState;
@@ -140,6 +141,14 @@ export interface IdentifyResult {
   };
 }
 
+export type UseCasePresetName = 'privacy-first' | 'analytics-lite' | 'login-risk' | 'checkout-risk' | 'bot-defense' | 'fraud-defense';
+
+export interface UseCasePreset {
+  profile: PrivacyProfile;
+  policy: PolicyOptions;
+  identity: IdentityOptions;
+}
+
 export interface HashComponentsOptions {
   namespace?: string;
   salt?: string;
@@ -175,7 +184,19 @@ export function createBotDetectionCollector(): Collector;
 export function createDefaultCollectors(): Collector[];
 export function createBrowserCollectorPack(): Collector[];
 export function createPrivacyModeCollector(): Collector;
+export function createTamperEvidenceCollector(): Collector;
 export function createPolicy(profile?: PrivacyProfile, overrides?: PolicyOptions): Record<string, unknown>;
+export const USE_CASE_PRESETS: Record<UseCasePresetName, UseCasePreset>;
+export function createUseCasePreset(name: UseCasePresetName, overrides?: Partial<UseCasePreset>): UseCasePreset;
+export function listUseCasePresets(): UseCasePresetName[];
+export function createStabilityMonitor(options?: { historyLimit?: number }): {
+  observe(result: IdentifyResult): Record<string, unknown>;
+  reset(): void;
+  snapshot(): Record<string, unknown>;
+};
+export function diffComponents(previousComponents?: ComponentResult[], currentComponents?: ComponentResult[], identityComponentIds?: string[]): Record<string, unknown>;
+export function createExplainableReport(result: IdentifyResult, options?: { generatedAt?: string; includeValues?: boolean }): Record<string, unknown>;
+export function explainComponent(component: ComponentResult, identityComponents?: string[] | Set<string>, options?: { includeValues?: boolean }): Record<string, unknown>;
 export function canonicalStringify(value: unknown): string;
 export function componentsToDebugString(components: ComponentResult[]): string;
 export function hashComponents(components: ComponentResult[], options?: HashComponentsOptions, context?: IdentifyContext): Promise<HashComponentsResult>;
