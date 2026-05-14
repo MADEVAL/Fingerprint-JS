@@ -12,7 +12,7 @@ export interface CollectorContext {
   now: () => number;
 }
 
-export interface CollectorDefinition<T = unknown> {
+export interface CollectorDefinition<T = unknown, Prepared = unknown> {
   id: string;
   version?: string;
   category?: string;
@@ -20,13 +20,23 @@ export interface CollectorDefinition<T = unknown> {
   mode?: CollectorMode;
   stability?: 'stable' | 'volatile' | string;
   weight?: number;
-  collect(context: CollectorContext): T | Promise<T>;
+  prepare?(context: CollectorContext): Prepared | Promise<Prepared>;
+  collect(context: CollectorContext, prepared?: Prepared): T | Promise<T>;
 }
 
-export interface Collector<T = unknown> extends Required<Omit<CollectorDefinition<T>, 'collect'>> {
-  collect(context: CollectorContext): T | Promise<T>;
+export interface Collector<T = unknown, Prepared = unknown> {
+  id: string;
+  version: string;
+  category: string;
+  sensitivity: Sensitivity;
+  mode: CollectorMode;
+  stability: string;
+  weight: number;
+  prepare: null | ((context: CollectorContext) => Prepared | Promise<Prepared>);
+  collect(context: CollectorContext, prepared?: Prepared): T | Promise<T>;
 }
 
-export function createCollector<T = unknown>(definition: CollectorDefinition<T>): Collector<T>;
+export function createCollector<T = unknown, Prepared = unknown>(definition: CollectorDefinition<T, Prepared>): Collector<T, Prepared>;
 export function createDefaultCollectors(): Collector[];
 export function createBrowserCollectorPack(): Collector[];
+export function createNavigatorPropertiesCollector(): Collector;

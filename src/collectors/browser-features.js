@@ -11,6 +11,24 @@ const VENDOR_GLOBALS = Object.freeze([
   ['opera', 'opr']
 ]);
 
+const DOM_BLOCKER_BAITS = Object.freeze([
+  ['generic-ad', 'ad adsbox advertisement banner_ad pub_300x250 text-ad textAd'],
+  ['ad-server', 'adserver ad-banner ad-unit ad-zone ad-placement'],
+  ['doubleclick', 'doubleclick dart-ad'],
+  ['google-ads', 'google-ad googleads adsbygoogle'],
+  ['sponsor', 'sponsor sponsored-link sponsored_content'],
+  ['analytics', 'tracking analytics pixel'],
+  ['social', 'social-share social-widget facebook-like twitter-share'],
+  ['newsletter-popup', 'newsletter-popup email-capture subscribe-modal'],
+  ['cookie-consent', 'cookie-banner cookie-consent gdpr-consent'],
+  ['taboola', 'taboola-outbrain trc_rbox'],
+  ['outbrain', 'outbrain-widget ob-widget'],
+  ['yandex-direct', 'yandex_rtb yandex-direct'],
+  ['amazon-ads', 'amzn-native-ad apstag-ad'],
+  ['video-ads', 'video-ads preroll-ads ima-ad-container'],
+  ['affiliate', 'affiliate-link affiliate-widget']
+]);
+
 export function createPluginsCollector() {
   return createCollector({
     id: 'browser.plugins',
@@ -144,7 +162,7 @@ export function createPrivateClickMeasurementCollector() {
 export function createDomBlockersCollector() {
   return createCollector({
     id: 'browser.domBlockers',
-    version: '1',
+    version: '2',
     category: 'runtime',
     sensitivity: 'medium',
     mode: 'active',
@@ -174,7 +192,7 @@ export function createDomBlockersCollector() {
           .map((bait) => bait.name)
           .sort();
 
-        return { checked: baitElements.length, blocked };
+        return { checked: baitElements.length, blocked, checksum: blocked.join('|') };
       } finally {
         if (container.parentNode && typeof container.parentNode.removeChild === 'function') {
           container.parentNode.removeChild(container);
@@ -185,13 +203,7 @@ export function createDomBlockersCollector() {
 }
 
 function createBaitElements(documentRef) {
-  const baits = [
-    ['generic-ad', 'ad adsbox advertisement banner_ad'],
-    ['sponsor', 'sponsor sponsored-link'],
-    ['analytics', 'tracking analytics pixel']
-  ];
-
-  return baits.map(([name, className]) => {
+  return DOM_BLOCKER_BAITS.map(([name, className]) => {
     const element = documentRef.createElement('div');
     element.className = className;
     element.textContent = name;

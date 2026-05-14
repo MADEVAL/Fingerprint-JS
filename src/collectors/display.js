@@ -1,6 +1,8 @@
-import { detectBrowserQuirks, shouldSuppressSignal } from '../browser-quirks.js';
+import { detectBrowserQuirks, getSuppressionReason, shouldSuppressSignal } from '../browser-quirks.js';
 import { createCollector } from './core.js';
 import { getMatchMedia, getWindowRef, safeNumber } from './shared.js';
+
+let cachedScreenFrame = null;
 
 export function createScreenCollector() {
   return createCollector({
@@ -17,14 +19,19 @@ export function createScreenCollector() {
         return null;
       }
 
+      const quirks = detectBrowserQuirks(context);
+      if (shouldSuppressSignal('screen.metrics', quirks)) {
+        return { status: 'suppressed', reason: getSuppressionReason('screen.metrics', quirks) };
+      }
+
       return {
-        width: safeNumber(screenRef.width),
-        height: safeNumber(screenRef.height),
-        availWidth: safeNumber(screenRef.availWidth),
-        availHeight: safeNumber(screenRef.availHeight),
+        width: roundDimension(screenRef.width),
+        height: roundDimension(screenRef.height),
+        availWidth: roundDimension(screenRef.availWidth),
+        availHeight: roundDimension(screenRef.availHeight),
         colorDepth: safeNumber(screenRef.colorDepth),
         pixelDepth: safeNumber(screenRef.pixelDepth),
-        devicePixelRatio: safeNumber(context.global && context.global.devicePixelRatio)
+        devicePixelRatio: roundRatio(context.global && context.global.devicePixelRatio)
       };
     }
   });
@@ -42,7 +49,7 @@ export function createScreenFrameCollector() {
     collect(context) {
       const quirks = detectBrowserQuirks(context);
       if (shouldSuppressSignal('screen.frame', quirks)) {
-        return { status: 'suppressed', reason: 'known_unstable_screen_frame' };
+        return { status: 'suppressed', reason: getSuppressionReason('screen.frame', quirks) };
       }
 
       const windowRef = getWindowRef(context);
@@ -56,7 +63,7 @@ export function createScreenFrameCollector() {
       const innerWidth = safeNumber(windowRef.innerWidth);
       const innerHeight = safeNumber(windowRef.innerHeight);
 
-      return {
+      const frame = {
         outerWidth,
         outerHeight,
         innerWidth,
@@ -70,8 +77,20 @@ export function createScreenFrameCollector() {
           : null,
         availDeltaHeight: safeNumber(screenRef.height) !== null && safeNumber(screenRef.availHeight) !== null
           ? Math.max(0, Number(screenRef.height) - Number(screenRef.availHeight))
-          : null
+          : null,
+        fullscreen: isFullscreen(context),
+        cached: false
       };
+
+      if (!frame.fullscreen && hasUsableFrame(frame)) {
+        cachedScreenFrame = Object.freeze({ ...frame });
+      }
+
+      if (!frame.fullscreen && isZeroFrame(frame) && cachedScreenFrame) {
+        return { ...cachedScreenFrame, cached: true };
+      }
+
+      return frame;
     }
   });
 }
@@ -143,4 +162,28 @@ function matches(matchMedia, query) {
   } catch (_error) {
     return false;
   }
+}
+
+function roundDimension(value) {
+  const number = safeNumber(value);
+  return number === null ? null : Math.round(number);
+}
+
+function roundRatio(value) {
+  const number = safeNumber(value);
+  return number === null ? null : Math.round(number * 1000) / 1000;
+}
+
+function isFullscreen(context) {
+  const documentRef = context.document || null;
+  const windowRef = getWindowRef(context);
+  return Boolean((documentRef && (documentRef.fullscreenElement || documentRef.webkitFullscreenElement)) || windowRef.fullScreen === true);
+}
+
+function hasUsableFrame(frame) {
+  return [frame.frameWidth, frame.frameHeight, frame.availDeltaWidth, frame.availDeltaHeight].some((value) => Number(value) > 0);
+}
+
+function isZeroFrame(frame) {
+  return [frame.frameWidth, frame.frameHeight, frame.availDeltaWidth, frame.availDeltaHeight].every((value) => value === 0);
 }

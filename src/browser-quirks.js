@@ -9,19 +9,25 @@ export function detectBrowserQuirks(context = {}) {
   const brandNames = normalizeBrandNames(uaData && uaData.brands);
 
   const firefoxMatch = /Firefox\/(\d+)/u.exec(userAgent);
+  const firefoxIosMatch = /FxiOS\/(\d+)/u.exec(userAgent);
   const safariMatch = /Version\/(\d+)/u.exec(userAgent);
   const samsungMatch = /SamsungBrowser\/(\d+)/u.exec(userAgent);
-  const geckoMatch = /Gecko\//u.test(userAgent);
+  const chromeMatch = /(?:Chrome|Chromium|CriOS)\/(\d+)/u.exec(userAgent);
   const chromiumFromBrand = brandNames.some((name) => /Chromium|Google Chrome|Microsoft Edge/u.test(name));
   const chromiumFromUa = /Chrome\/|Chromium\/|CriOS\/|Edg\//u.test(userAgent);
-  const isFirefox = Boolean(firefoxMatch);
-  const isChromium = (chromiumFromBrand || chromiumFromUa) && !isFirefox;
+  const geckoFeature = 'mozInnerScreenX' in windowRef || supportsCss(windowRef, '-moz-appearance', 'none');
+  const chromiumFeature = Boolean(windowRef.chrome && (windowRef.chrome.runtime || windowRef.chrome.loadTimes || windowRef.chrome.csi));
+  const webKitFeature = 'WebKitCSSMatrix' in windowRef || 'webkitRequestAnimationFrame' in windowRef || supportsCss(windowRef, '-webkit-touch-callout', 'none') || Boolean(windowRef.safari);
+  const isFirefox = Boolean(firefoxMatch || geckoFeature) && !/Seamonkey\//u.test(userAgent);
+  const isChromium = (chromiumFromBrand || chromiumFromUa || chromiumFeature) && !isFirefox;
   const isSafari = /Safari\//u.test(userAgent) && !isChromium && !/FxiOS\/|OPR\/|SamsungBrowser\//u.test(userAgent);
-  const isWebKit = /AppleWebKit\//u.test(userAgent) || Boolean(windowRef.safari);
+  const isWebKit = /AppleWebKit\//u.test(userAgent) || webKitFeature;
   const isIos = /iPad|iPhone|iPod/u.test(platform) || /iPad|iPhone|iPod/u.test(userAgent) || (platform === 'MacIntel' && safeNumber(navigatorRef && navigatorRef.maxTouchPoints) > 1);
   const isAndroid = /Android/u.test(userAgent) || uaPlatform === 'Android';
   const safariMajor = safariMatch ? Number(safariMatch[1]) : null;
   const firefoxMajor = firefoxMatch ? Number(firefoxMatch[1]) : null;
+  const firefoxIosMajor = firefoxIosMatch ? Number(firefoxIosMatch[1]) : null;
+  const chromiumMajor = chromeMatch ? Number(chromeMatch[1]) : null;
   const samsungMajor = samsungMatch ? Number(samsungMatch[1]) : null;
   const screenWidth = safeNumber(screenRef && screenRef.width);
   const screenHeight = safeNumber(screenRef && screenRef.height);
@@ -32,14 +38,20 @@ export function detectBrowserQuirks(context = {}) {
     isAndroid,
     isChromium,
     isFirefox,
+    isFirefox120OrNewer: Boolean(isFirefox && firefoxMajor !== null && firefoxMajor >= 120),
+    isFirefox143OrNewer: Boolean(isFirefox && firefoxMajor !== null && firefoxMajor >= 143),
     isFirefoxResistFingerprintingLikely: Boolean(isFirefox && hardwareConcurrency === 2 && screenWidth === 1000 && screenHeight === 1000),
     isIos,
     isIosDesktopMode: Boolean(platform === 'MacIntel' && safeNumber(navigatorRef && navigatorRef.maxTouchPoints) > 1),
+    isOldMobileSafari: Boolean(isIos && isSafari && safariMajor !== null && safariMajor <= 11),
     isSafari,
     isSafari17OrNewer: Boolean(isSafari && safariMajor !== null && safariMajor >= 17),
     isSamsungInternet: Boolean(samsungMatch || brandNames.some((name) => /Samsung Internet/u.test(name))),
+    isSamsungInternet26OrNewer: Boolean((samsungMatch || brandNames.some((name) => /Samsung Internet/u.test(name))) && samsungMajor !== null && samsungMajor >= 26),
     isWebKit,
+    chromiumMajor,
     firefoxMajor,
+    firefoxIosMajor,
     safariMajor,
     samsungMajor
   });
@@ -47,22 +59,69 @@ export function detectBrowserQuirks(context = {}) {
 
 export function shouldSuppressSignal(signal, quirks) {
   if (signal === 'audio') {
-    return Boolean(quirks.isSafari17OrNewer || quirks.isFirefoxResistFingerprintingLikely);
+    return Boolean(quirks.isSafari17OrNewer || quirks.isOldMobileSafari || quirks.isSamsungInternet26OrNewer || quirks.isFirefoxResistFingerprintingLikely);
   }
 
   if (signal === 'canvas') {
+    return Boolean(quirks.isSafari17OrNewer || quirks.isFirefox120OrNewer || quirks.isFirefoxResistFingerprintingLikely);
+  }
+
+  if (signal === 'screen.metrics') {
     return Boolean(quirks.isFirefoxResistFingerprintingLikely);
   }
 
   if (signal === 'screen.frame') {
-    return Boolean(quirks.isSafari17OrNewer || quirks.isFirefoxResistFingerprintingLikely);
+    return Boolean(quirks.isSafari17OrNewer || quirks.isFirefox143OrNewer || quirks.isFirefoxResistFingerprintingLikely);
   }
 
   if (signal === 'hardware.concurrency') {
-    return Boolean(quirks.isFirefoxResistFingerprintingLikely);
+    return false;
   }
 
   return false;
+}
+
+export function getSuppressionReason(signal, quirks) {
+  if (!shouldSuppressSignal(signal, quirks)) {
+    return null;
+  }
+
+  if (quirks.isFirefoxResistFingerprintingLikely) {
+    return 'firefox_resist_fingerprinting';
+  }
+
+  if (quirks.isSafari17OrNewer) {
+    return 'safari_17_unstable_source';
+  }
+
+  if (quirks.isFirefox120OrNewer && signal === 'canvas') {
+    return 'firefox_canvas_randomization';
+  }
+
+  if (quirks.isFirefox143OrNewer && signal === 'screen.frame') {
+    return 'firefox_screen_frame_randomization';
+  }
+
+  if (quirks.isSamsungInternet26OrNewer) {
+    return 'samsung_internet_audio_instability';
+  }
+
+  if (quirks.isOldMobileSafari) {
+    return 'old_mobile_safari_audio_requires_gesture';
+  }
+}
+
+export function normalizeHardwareConcurrency(value, quirks) {
+  const concurrency = safeNumber(value);
+  if (concurrency === null) {
+    return null;
+  }
+
+  if (quirks.isFirefox143OrNewer || quirks.isFirefoxResistFingerprintingLikely) {
+    return concurrency <= 4 ? 4 : 8;
+  }
+
+  return concurrency;
 }
 
 function normalizeBrandNames(brands) {
@@ -75,4 +134,12 @@ function normalizeBrandNames(brands) {
 
 function safeNumber(value) {
   return Number.isFinite(value) ? Number(value) : null;
+}
+
+function supportsCss(windowRef, property, value) {
+  try {
+    return Boolean(windowRef.CSS && typeof windowRef.CSS.supports === 'function' && windowRef.CSS.supports(property, value));
+  } catch (_error) {
+    return false;
+  }
 }

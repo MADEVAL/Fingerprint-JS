@@ -13,6 +13,10 @@ export function createCollector(definition) {
     throw new TypeError(`Collector ${definition.id} must provide collect(context).`);
   }
 
+  if (definition.prepare != null && typeof definition.prepare !== 'function') {
+    throw new TypeError(`Collector ${definition.id} prepare must be a function when provided.`);
+  }
+
   const sensitivity = definition.sensitivity || 'low';
   if (!SENSITIVITY_RANK[sensitivity]) {
     throw new TypeError(`Collector ${definition.id} has unknown sensitivity: ${sensitivity}`);
@@ -26,6 +30,7 @@ export function createCollector(definition) {
     mode: definition.mode === 'active' ? 'active' : 'passive',
     stability: definition.stability || 'stable',
     weight: Number.isFinite(definition.weight) ? Math.max(0, Number(definition.weight)) : 1,
+    prepare: definition.prepare || null,
     collect: definition.collect
   });
 }

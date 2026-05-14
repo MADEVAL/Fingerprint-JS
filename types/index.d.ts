@@ -20,7 +20,7 @@ export interface ConsentState {
   [key: string]: unknown;
 }
 
-export interface CollectorDefinition<T = unknown> {
+export interface CollectorDefinition<T = unknown, Prepared = unknown> {
   id: string;
   version?: string;
   category?: string;
@@ -28,11 +28,20 @@ export interface CollectorDefinition<T = unknown> {
   mode?: CollectorMode;
   stability?: 'stable' | 'volatile' | string;
   weight?: number;
-  collect(context: CollectorContext): T | Promise<T>;
+  prepare?(context: CollectorContext): Prepared | Promise<Prepared>;
+  collect(context: CollectorContext, prepared?: Prepared): T | Promise<T>;
 }
 
-export interface Collector<T = unknown> extends Required<Omit<CollectorDefinition<T>, 'collect'>> {
-  collect(context: CollectorContext): T | Promise<T>;
+export interface Collector<T = unknown, Prepared = unknown> {
+  id: string;
+  version: string;
+  category: string;
+  sensitivity: Sensitivity;
+  mode: CollectorMode;
+  stability: string;
+  weight: number;
+  prepare: null | ((context: CollectorContext) => Prepared | Promise<Prepared>);
+  collect(context: CollectorContext, prepared?: Prepared): T | Promise<T>;
 }
 
 export interface PolicyOptions {
@@ -59,7 +68,7 @@ export interface ClientOptions {
   salt?: string;
   collectorTimeoutMs?: number;
   loadDelayMs?: number;
-  collectors?: CollectorDefinition[];
+  collectors?: Array<CollectorDefinition | Collector>;
   policy?: PolicyOptions;
   storage?: false | 'local' | StorageAdapter;
   consent?: boolean | ConsentState;
@@ -111,6 +120,17 @@ export interface IdentifyResult {
   };
 }
 
+export interface HashComponentsOptions {
+  namespace?: string;
+  salt?: string;
+}
+
+export interface HashComponentsResult {
+  visitorId: string | null;
+  hashAlgorithm: string | null;
+  namespace: string;
+}
+
 export interface FingerprintClient {
   version: string;
   profile: PrivacyProfile;
@@ -127,10 +147,11 @@ export const VERSION: string;
 export const PROFILE_PRESETS: Record<PrivacyProfile, Record<string, unknown>>;
 export function createClient(options?: ClientOptions): FingerprintClient;
 export function loadClient(options?: ClientOptions, context?: IdentifyContext): Promise<FingerprintClient>;
-export function createCollector<T = unknown>(definition: CollectorDefinition<T>): Collector<T>;
+export function createCollector<T = unknown, Prepared = unknown>(definition: CollectorDefinition<T, Prepared>): Collector<T, Prepared>;
 export function createDefaultCollectors(): Collector[];
 export function createBrowserCollectorPack(): Collector[];
 export function createPolicy(profile?: PrivacyProfile, overrides?: PolicyOptions): Record<string, unknown>;
 export function canonicalStringify(value: unknown): string;
 export function componentsToDebugString(components: ComponentResult[]): string;
+export function hashComponents(components: ComponentResult[], options?: HashComponentsOptions, context?: IdentifyContext): Promise<HashComponentsResult>;
 export function hashValue(value: unknown, runtime?: Partial<CollectorContext>): Promise<{ algorithm: string; value: string }>;

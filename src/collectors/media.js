@@ -1,31 +1,85 @@
-import { detectBrowserQuirks, shouldSuppressSignal } from '../browser-quirks.js';
+import { detectBrowserQuirks, getSuppressionReason, shouldSuppressSignal } from '../browser-quirks.js';
 import { createCollector } from './core.js';
 import { checksumString, getWindowRef, safeNumber } from './shared.js';
 
 export function createAudioCollector() {
   return createCollector({
     id: 'audio.fingerprint',
-    version: '1',
+    version: '2',
     category: 'media',
     sensitivity: 'high',
     mode: 'active',
     stability: 'stable',
     weight: 1.2,
-    async collect(context) {
+    async prepare(context) {
+      return collectAudioFingerprint(context);
+    },
+    async collect(context, prepared) {
+      if (prepared !== undefined) {
+        return prepared;
+      }
+
+      return collectAudioFingerprint(context);
+    }
+  });
+}
+
+export function createAudioBaseLatencyCollector() {
+  return createCollector({
+    id: 'audio.baseLatency',
+    version: '1',
+    category: 'media',
+    sensitivity: 'medium',
+    mode: 'active',
+    stability: 'stable',
+    weight: 0.45,
+    collect(context) {
       const quirks = detectBrowserQuirks(context);
       if (shouldSuppressSignal('audio', quirks)) {
-        return { status: 'suppressed', reason: 'known_unstable_audio' };
+        return { status: 'suppressed', reason: getSuppressionReason('audio', quirks) };
       }
 
       const windowRef = getWindowRef(context);
-      const OfflineAudioContext = windowRef.OfflineAudioContext || windowRef.webkitOfflineAudioContext;
-      if (typeof OfflineAudioContext !== 'function') {
+      const AudioContext = windowRef.AudioContext || windowRef.webkitAudioContext;
+      if (typeof AudioContext !== 'function') {
         return { status: 'unsupported' };
       }
 
-      return renderAudio(OfflineAudioContext);
+      try {
+        const audioContext = new AudioContext();
+        const value = {
+          status: 'ok',
+          baseLatency: safeNumber(audioContext.baseLatency),
+          outputLatency: safeNumber(audioContext.outputLatency),
+          sampleRate: safeNumber(audioContext.sampleRate),
+          state: typeof audioContext.state === 'string' ? audioContext.state : null
+        };
+
+        if (typeof audioContext.close === 'function') {
+          void audioContext.close();
+        }
+
+        return value;
+      } catch (error) {
+        return { status: 'error', message: error && error.message ? String(error.message) : 'audio_context_error' };
+      }
     }
   });
+}
+
+async function collectAudioFingerprint(context) {
+  const quirks = detectBrowserQuirks(context);
+  if (shouldSuppressSignal('audio', quirks)) {
+    return { status: 'suppressed', reason: getSuppressionReason('audio', quirks) };
+  }
+
+  const windowRef = getWindowRef(context);
+  const OfflineAudioContext = windowRef.OfflineAudioContext || windowRef.webkitOfflineAudioContext;
+  if (typeof OfflineAudioContext !== 'function') {
+    return { status: 'unsupported' };
+  }
+
+  return renderAudio(OfflineAudioContext);
 }
 
 async function renderAudio(OfflineAudioContext) {

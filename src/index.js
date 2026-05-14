@@ -4,5 +4,6 @@ export { createBrowserCollectorPack, createCollector, createDefaultCollectors } 
 export { PROFILE_PRESETS, VERSION } from './constants.js';
 export { hashValue } from './crypto.js';
 export { componentsToDebugString } from './debug.js';
+export { hashComponents } from './hash-components.js';
 export { loadClient } from './loader.js';
 export { createPolicy } from './policy.js';

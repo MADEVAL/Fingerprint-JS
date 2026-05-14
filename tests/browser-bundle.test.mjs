@@ -16,6 +16,7 @@ test('browser bundle exposes global API and identifies in a restricted VM contex
 
   assert.equal(typeof context.FingerprintFramework.createClient, 'function');
   assert.equal(typeof context.FingerprintFramework.loadClient, 'function');
+  assert.equal(typeof context.FingerprintFramework.hashComponents, 'function');
   assert.equal(typeof context.FingerprintFramework.componentsToDebugString, 'function');
 
   const collector = context.FingerprintFramework.createCollector({
@@ -34,5 +35,6 @@ test('browser bundle exposes global API and identifies in a restricted VM contex
 
   assert.ok(result.visitorId);
   assert.equal(result.components[0].status, 'ok');
+  assert.equal((await context.FingerprintFramework.hashComponents(result.components, { namespace: 'vm-suite' })).visitorId, result.visitorId);
   assert.match(context.FingerprintFramework.componentsToDebugString(result.components), /vm\.signal/u);
 });

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { detectBrowserQuirks, shouldSuppressSignal } from '../src/browser-quirks.js';
-import { createDefaultCollectors } from '../src/index.js';
+import { detectBrowserQuirks, getSuppressionReason, shouldSuppressSignal } from '../src/browser-quirks.js';
+import { createCollector, createDefaultCollectors } from '../src/index.js';
 
 function collector(id) {
   const found = createDefaultCollectors().find((item) => item.id === id);
@@ -46,6 +46,40 @@ test('browser runtime collector handles navigator data and missing navigator', (
     navigator: { userAgentData: { brands: [{ brand: '', version: '' }] } }
   }).userAgentData.brands, [{ brand: null, version: null }]);
   assert.equal(runtime.collect({ navigator: null }), null);
+});
+
+test('navigator properties collector separates low-level browser properties', () => {
+  const properties = collector('runtime.navigatorProperties');
+
+  assert.equal(properties.collect({ navigator: null }), null);
+  assert.deepEqual(properties.collect({ navigator: {} }), {
+    vendor: null,
+    vendorSub: null,
+    product: null,
+    productSub: null,
+    oscpu: null,
+    cpuClass: null,
+    buildId: null
+  });
+
+  const value = properties.collect({
+    navigator: {
+      vendor: 'Vendor',
+      vendorSub: 'Sub',
+      product: 'Gecko',
+      productSub: '20100101',
+      oscpu: 'Windows NT 10.0',
+      cpuClass: 'x86',
+      buildID: 'build'
+    }
+  });
+
+  assert.equal(value.oscpu, 'Windows NT 10.0');
+  assert.equal(value.buildId, 'build');
+});
+
+test('collector validation rejects invalid prepare handlers', () => {
+  assert.throws(() => createCollector({ id: 'bad.prepare', collect: () => null, prepare: true }), /prepare must be a function/u);
 });
 
 test('client hints collector handles basic, high entropy, and failure paths', async () => {
@@ -202,7 +236,12 @@ test('runtime, locale, timezone, screen, hardware, and storage collectors return
   });
   assert.equal(screen.devicePixelRatio, 2);
   assert.equal(screen.pixelDepth, null);
+  assert.equal(collector('screen.metrics').collect({ screen: { width: 1.4, height: 2.6 } }).devicePixelRatio, null);
   assert.equal(collector('screen.metrics').collect({ screen: null }), null);
+  assert.equal(collector('screen.metrics').collect({
+    screen: { width: 1000, height: 1000 },
+    navigator: { userAgent: 'Firefox/143.0', hardwareConcurrency: 2 }
+  }).status, 'suppressed');
 
   const hardware = collector('hardware').collect({
     navigator: {
@@ -212,6 +251,7 @@ test('runtime, locale, timezone, screen, hardware, and storage collectors return
     }
   });
   assert.equal(hardware.hardwareConcurrency, 8);
+  assert.equal(collector('hardware').collect({ navigator: { userAgent: 'Chrome/120 Safari/537.36' } }).hardwareConcurrency, null);
   assert.equal(collector('hardware').collect({ navigator: null }), null);
 
   const storageState = new Map();
@@ -273,6 +313,7 @@ test('browser quirk detection marks unstable browser modes', () => {
 
   assert.equal(safari.isSafari17OrNewer, true);
   assert.equal(shouldSuppressSignal('audio', safari), true);
+  assert.equal(shouldSuppressSignal('canvas', safari), true);
   assert.equal(shouldSuppressSignal('unknown', safari), false);
 
   const firefoxRfp = detectBrowserQuirks({
@@ -286,8 +327,25 @@ test('browser quirk detection marks unstable browser modes', () => {
 
   assert.equal(firefoxRfp.engine, 'gecko');
   assert.equal(shouldSuppressSignal('canvas', firefoxRfp), true);
+  assert.equal(shouldSuppressSignal('screen.metrics', firefoxRfp), true);
   assert.equal(shouldSuppressSignal('screen.frame', firefoxRfp), true);
-  assert.equal(shouldSuppressSignal('hardware.concurrency', firefoxRfp), true);
+  assert.equal(shouldSuppressSignal('hardware.concurrency', firefoxRfp), false);
+
+  const firefox120 = detectBrowserQuirks({ navigator: { userAgent: 'Mozilla/5.0 Firefox/120.0' } });
+  assert.equal(shouldSuppressSignal('canvas', firefox120), true);
+  assert.equal(getSuppressionReason('canvas', firefox120), 'firefox_canvas_randomization');
+
+  const firefox143Screen = detectBrowserQuirks({ navigator: { userAgent: 'Mozilla/5.0 Firefox/143.0', hardwareConcurrency: 8 } });
+  assert.equal(getSuppressionReason('screen.frame', firefox143Screen), 'firefox_screen_frame_randomization');
+
+  const samsung26 = detectBrowserQuirks({ navigator: { userAgent: 'Mozilla/5.0 SamsungBrowser/26.0 Chrome/120.0 Safari/537.36' } });
+  assert.equal(shouldSuppressSignal('audio', samsung26), true);
+  assert.equal(getSuppressionReason('audio', samsung26), 'samsung_internet_audio_instability');
+
+  const oldMobileSafari = detectBrowserQuirks({ navigator: { userAgent: 'Mozilla/5.0 iPhone Version/11.0 Mobile/15E148 Safari/604.1', platform: 'iPhone' } });
+  assert.equal(shouldSuppressSignal('audio', oldMobileSafari), true);
+  assert.equal(getSuppressionReason('audio', oldMobileSafari), 'old_mobile_safari_audio_requires_gesture');
+  assert.equal(getSuppressionReason('unknown', detectBrowserQuirks()), null);
 
   const chromium = detectBrowserQuirks({
     navigator: {
@@ -300,6 +358,17 @@ test('browser quirk detection marks unstable browser modes', () => {
   assert.equal(chromium.isChromium, true);
   assert.equal(chromium.isSamsungInternet, true);
   assert.equal(chromium.isAndroid, true);
+
+  assert.equal(detectBrowserQuirks({ window: { chrome: { runtime: {} } } }).isChromium, true);
+  assert.equal(detectBrowserQuirks({ window: { chrome: { loadTimes: () => null } } }).isChromium, true);
+  assert.equal(detectBrowserQuirks({ window: { chrome: { csi: () => null } } }).isChromium, true);
+
+  const iosFromUserAgent = detectBrowserQuirks({ navigator: { userAgent: 'Mozilla/5.0 iPhone Safari/604.1', platform: 'MacIntel', maxTouchPoints: 0 } });
+  assert.equal(iosFromUserAgent.isIos, true);
+
+  const firefoxIos = detectBrowserQuirks({ navigator: { userAgent: 'Mozilla/5.0 iPhone FxiOS/123.0 Mobile/15E148 Safari/605.1.15', platform: 'iPhone' } });
+  assert.equal(firefoxIos.firefoxIosMajor, 123);
+  assert.equal(firefoxIos.isSafari, false);
 
   const iosDesktop = detectBrowserQuirks({
     navigator: {
@@ -314,6 +383,24 @@ test('browser quirk detection marks unstable browser modes', () => {
   assert.equal(iosDesktop.isIosDesktopMode, true);
   assert.equal(iosDesktop.isAndroid, true);
   assert.equal(iosDesktop.isSamsungInternet, true);
+
+  const cssGecko = detectBrowserQuirks({
+    window: { CSS: { supports: (property) => property === '-moz-appearance' } }
+  });
+  assert.equal(cssGecko.isFirefox, true);
+
+  const cssWebKit = detectBrowserQuirks({
+    window: { CSS: { supports: (property) => property === '-webkit-touch-callout' } }
+  });
+  assert.equal(cssWebKit.engine, 'webkit');
+
+  const geckoWindow = detectBrowserQuirks({ window: { mozInnerScreenX: 1 } });
+  assert.equal(geckoWindow.isFirefox, true);
+
+  const cssThrow = detectBrowserQuirks({
+    window: { CSS: { supports: () => { throw new Error('css unavailable'); } } }
+  });
+  assert.equal(cssThrow.engine, 'unknown');
 
   const unknown = detectBrowserQuirks();
   assert.equal(unknown.engine, 'unknown');
@@ -341,6 +428,46 @@ test('screen frame and media preferences collectors handle stable and suppressed
   assert.equal(sparseFrame.left, 1);
   assert.equal(sparseFrame.frameWidth, null);
   assert.equal(sparseFrame.availDeltaWidth, null);
+
+  const cachedFrame = screenFrame.collect({
+    global: {},
+    window: { outerWidth: 980, outerHeight: 760, innerWidth: 980, innerHeight: 760 },
+    screen: { width: 1200, height: 900, availWidth: 1200, availHeight: 900 },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36', platform: 'Win32' }
+  });
+  assert.equal(cachedFrame.cached, true);
+  assert.equal(cachedFrame.frameWidth, 20);
+
+  const fullscreenFrame = screenFrame.collect({
+    window: { outerWidth: 980, outerHeight: 760, innerWidth: 980, innerHeight: 760, fullScreen: true },
+    screen: { width: 1200, height: 900, availWidth: 1200, availHeight: 900 },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36' }
+  });
+  assert.equal(fullscreenFrame.fullscreen, true);
+  assert.equal(fullscreenFrame.cached, false);
+
+  const documentFullscreenFrame = screenFrame.collect({
+    document: { fullscreenElement: {} },
+    window: { outerWidth: 100, outerHeight: 100, innerWidth: 90, innerHeight: 90 },
+    screen: { width: 100, height: 100, availWidth: 90, availHeight: 90 },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36' }
+  });
+  assert.equal(documentFullscreenFrame.fullscreen, true);
+
+  const webkitFullscreenFrame = screenFrame.collect({
+    document: { webkitFullscreenElement: {} },
+    window: { outerWidth: 100, outerHeight: 100, innerWidth: 90, innerHeight: 90 },
+    screen: { width: 100, height: 100, availWidth: 90, availHeight: 90 },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36' }
+  });
+  assert.equal(webkitFullscreenFrame.fullscreen, true);
+
+  const mixedAvailFrame = screenFrame.collect({
+    window: { outerWidth: 100, outerHeight: 100, innerWidth: 100, innerHeight: 100 },
+    screen: { width: 100, height: 100 },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36' }
+  });
+  assert.equal(mixedAvailFrame.availDeltaWidth, null);
 
   const suppressed = screenFrame.collect({
     window: {},
@@ -392,7 +519,8 @@ test('hardware, touch, architecture, and math collectors return stable values', 
     navigator: { userAgent: 'Firefox/143.0', hardwareConcurrency: 2, deviceMemory: 8, maxTouchPoints: 1 },
     screen: { width: 1000, height: 1000 }
   });
-  assert.equal(suppressedHardware.hardwareConcurrency, null);
+  assert.equal(suppressedHardware.hardwareConcurrency, 4);
+  assert.equal(hardware.collect({ navigator: { userAgent: 'Firefox/143.0', hardwareConcurrency: 12 } }).hardwareConcurrency, 8);
 
   const touch = collector('hardware.touch').collect({
     global: {},
@@ -582,6 +710,10 @@ test('canvas collector handles unavailable and available canvas paths', () => {
     navigator: { userAgent: 'Firefox/143.0', hardwareConcurrency: 2 },
     screen: { width: 1000, height: 1000 }
   }).status, 'suppressed');
+  assert.equal(canvas.collect({
+    document: { createElement: () => ({ getContext: () => ({}) }) },
+    navigator: { userAgent: 'Version/17.0 Safari/605.1.15', platform: 'MacIntel' }
+  }).reason, 'safari_17_unstable_source');
 
   const operations = [];
   const context = {
@@ -634,7 +766,52 @@ test('canvas collector handles unavailable and available canvas paths', () => {
   assert.equal(value.status, 'ok');
   assert.equal(value.winding, true);
   assert.ok(value.geometry.length > 'data:image/png;base64,'.length);
+  assert.equal(value.geometry.status, 'ok');
   assert.match(value.text.checksum, /^[a-f0-9]{16}$/u);
+
+  const readFailure = canvas.collect({
+    document: {
+      createElement: () => ({
+        getContext: () => ({
+          set fillStyle(_value) {},
+          set globalCompositeOperation(_value) {},
+          set textBaseline(_value) {},
+          set font(_value) {},
+          fillRect() {},
+          beginPath() {},
+          arc() {},
+          closePath() {},
+          fill() {},
+          fillText() {},
+          rect() {},
+          isPointInPath: () => true
+        }),
+        toDataURL: () => { throw new Error('blocked canvas'); }
+      })
+    }
+  });
+  assert.equal(readFailure.geometry.status, 'unstable');
+
+  const readFailureWithoutMessage = canvas.collect({
+    document: {
+      createElement: () => ({
+        getContext: () => ({
+          set fillStyle(_value) {},
+          set globalCompositeOperation(_value) {},
+          set textBaseline(_value) {},
+          set font(_value) {},
+          fillRect() {},
+          beginPath() {},
+          arc() {},
+          closePath() {},
+          fill() {},
+          fillText() {}
+        }),
+        toDataURL: () => { throw 'blocked'; }
+      })
+    }
+  });
+  assert.equal(readFailureWithoutMessage.geometry.reason, 'canvas_read_failed');
 
   const noWinding = canvas.collect({
     document: {
@@ -684,6 +861,7 @@ test('font collectors use font API and layout fallback', () => {
   const fonts = collector('fonts.available');
   assert.equal(fonts.collect({ document: null }), null);
   assert.equal(fonts.collect({ document: {} }), null);
+  assert.equal(fonts.collect({}, { method: 'prepared-fonts' }).method, 'prepared-fonts');
 
   const checked = fonts.collect({
     document: {
@@ -704,21 +882,80 @@ test('font collectors use font API and layout fallback', () => {
   assert.equal(preferences.collect({ document: {} }), null);
   const preferenceValues = preferences.collect({ document: createFakeDocument() });
   assert.equal(typeof preferenceValues.monospace.width, 'number');
+
+  const framed = fonts.collect({ document: createFakeDocument({ iframeDocument: createFakeDocument() }) });
+  assert.equal(framed.method, 'layout');
+
+  const framedWindow = fonts.collect({ document: createFakeDocument({ iframeWindowDocument: createFakeDocument() }) });
+  assert.equal(framedWindow.method, 'layout');
+
+  const noFrameDocument = createFakeDocument({ frameMode: 'none' });
+  assert.equal(fonts.collect({ document: noFrameDocument }).method, 'layout');
+
+  const noStyleFrameDocument = createFakeDocument({ frameMode: 'no-style' });
+  assert.equal(fonts.collect({ document: noStyleFrameDocument }).method, 'layout');
+
+  const throwingFrameDocument = createFakeDocument({ frameMode: 'throw' });
+  assert.equal(fonts.collect({ document: throwingFrameDocument }).method, 'layout');
+
+  const preparedFonts = fonts.prepare({ document: layoutDocument });
+  assert.equal(preparedFonts.method, 'layout');
+
+  const preparedPreferences = preferences.prepare({ document: createFakeDocument() });
+  assert.equal(preferences.collect({}, preparedPreferences), preparedPreferences);
 });
 
-test('audio collector handles unsupported, suppressed, promise, and event rendering paths', async () => {
+test('audio collectors handle unsupported, suppressed, latency, promise, and event rendering paths', async () => {
   const audio = collector('audio.fingerprint');
+  const latency = collector('audio.baseLatency');
 
   assert.equal((await audio.collect({ window: {}, navigator: {} })).status, 'unsupported');
+  assert.equal(latency.collect({ window: {}, navigator: {} }).status, 'unsupported');
   assert.equal((await audio.collect({
     window: {},
     navigator: { userAgent: 'Version/17.0 Safari/605.1.15', platform: 'MacIntel' }
   })).status, 'suppressed');
+  assert.equal(latency.collect({
+    window: {},
+    navigator: { userAgent: 'SamsungBrowser/26.0 Chrome/120.0 Safari/537.36' }
+  }).status, 'suppressed');
   assert.equal((await audio.collect({
     window: {},
     navigator: { userAgent: 'Firefox/143.0', hardwareConcurrency: 2 },
     screen: { width: 1000, height: 1000 }
   })).status, 'suppressed');
+
+  const latencyValue = latency.collect({
+    window: { AudioContext: createFakeAudioContext() },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36' }
+  });
+  assert.equal(latencyValue.status, 'ok');
+  assert.equal(latencyValue.baseLatency, 0.01);
+
+  const webkitLatency = latency.collect({
+    window: { webkitAudioContext: createFakeAudioContext({ close: false }) },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36' }
+  });
+  assert.equal(webkitLatency.sampleRate, 48000);
+
+  const sparseLatency = latency.collect({
+    window: { AudioContext: createFakeAudioContext({ sparse: true }) },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36' }
+  });
+  assert.equal(sparseLatency.baseLatency, null);
+  assert.equal(sparseLatency.state, null);
+
+  const latencyError = latency.collect({
+    window: { AudioContext: class { constructor() { throw new Error('blocked audio'); } } },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36' }
+  });
+  assert.equal(latencyError.status, 'error');
+
+  const latencyErrorWithoutMessage = latency.collect({
+    window: { AudioContext: class { constructor() { throw 'blocked'; } } },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36' }
+  });
+  assert.equal(latencyErrorWithoutMessage.message, 'audio_context_error');
 
   const promiseValue = await audio.collect({
     window: { OfflineAudioContext: createFakeOfflineAudioContext(true, true) },
@@ -726,6 +963,11 @@ test('audio collector handles unsupported, suppressed, promise, and event render
   });
   assert.equal(promiseValue.status, 'ok');
   assert.match(promiseValue.checksum, /^[a-f0-9]{16}$/u);
+  assert.equal((await audio.prepare({
+    window: { OfflineAudioContext: createFakeOfflineAudioContext(true, true) },
+    navigator: { userAgent: 'Chrome/120 Safari/537.36' }
+  })).status, 'ok');
+  assert.equal((await audio.collect({}, { status: 'ok', checksum: 'prepared' })).checksum, 'prepared');
 
   const eventValue = await audio.collect({
     window: { OfflineAudioContext: createFakeOfflineAudioContext(false, false) },
@@ -815,9 +1057,10 @@ test('browser feature collectors cover plugins, vendor flavors, payment, private
     document: blockedDocument,
     window: { getComputedStyle: (element) => ({ display: element.className.includes('tracking') ? 'none' : 'block', visibility: 'visible', opacity: '1' }) }
   });
-  assert.equal(blocked.checked, 3);
+  assert.equal(blocked.checked, 15);
   assert.ok(blocked.blocked.includes('generic-ad'));
   assert.ok(blocked.blocked.includes('analytics'));
+  assert.equal(typeof blocked.checksum, 'string');
 
   const visible = blockers.collect({ document: createFakeDocument(), window: {} });
   assert.deepEqual(visible.blocked, []);
@@ -832,7 +1075,7 @@ test('browser feature collectors cover plugins, vendor flavors, payment, private
   const noParentDocument = createFakeDocument();
   noParentDocument.body.appendChild = () => null;
   const noParent = blockers.collect({ document: noParentDocument, window: {} });
-  assert.equal(noParent.checked, 3);
+  assert.equal(noParent.checked, 15);
 
   const zeroBox = blockers.collect({ document: createFakeDocument({ zeroHeightClass: 'sponsor', zeroWidthClass: 'tracking' }), window: {} });
   assert.ok(zeroBox.blocked.includes('sponsor'));
@@ -843,9 +1086,44 @@ function createFakeDocument(options = {}) {
   const hiddenClass = options.hiddenClass || '';
   const zeroHeightClass = options.zeroHeightClass || '';
   const zeroWidthClass = options.zeroWidthClass || '';
+  const iframeDocument = options.iframeDocument || null;
+  const iframeWindowDocument = options.iframeWindowDocument || null;
+  const frameMode = options.frameMode || 'normal';
   const documentRef = {
     body: createFakeElement('body', hiddenClass, zeroHeightClass, zeroWidthClass),
     createElement(tagName) {
+      if (tagName === 'iframe' && frameMode === 'none') {
+        return null;
+      }
+
+      if (tagName === 'iframe' && frameMode === 'throw') {
+        throw new Error('iframe blocked');
+      }
+
+      if (tagName === 'iframe' && frameMode === 'no-style') {
+        return { tagName };
+      }
+
+      if (tagName === 'iframe' && iframeDocument) {
+        return {
+          tagName,
+          style: {},
+          parentNode: null,
+          contentDocument: iframeDocument,
+          setAttribute() {}
+        };
+      }
+
+      if (tagName === 'iframe' && iframeWindowDocument) {
+        return {
+          tagName,
+          style: {},
+          parentNode: null,
+          contentWindow: { document: iframeWindowDocument },
+          setAttribute() {}
+        };
+      }
+
       return createFakeElement(tagName, hiddenClass, zeroHeightClass, zeroWidthClass);
     }
   };
@@ -944,6 +1222,27 @@ function createFakeOfflineAudioContext(returnsPromise, withCompressor) {
       return undefined;
     }
   };
+}
+
+function createFakeAudioContext(options = {}) {
+  class FakeAudioContext {
+    constructor() {
+      this.baseLatency = options.sparse ? Number.NaN : 0.01;
+      this.outputLatency = options.sparse ? undefined : 0.02;
+      this.sampleRate = options.sparse ? undefined : 48000;
+      this.state = options.sparse ? {} : 'running';
+    }
+
+    close() {
+      return Promise.resolve();
+    }
+  }
+
+  if (options.close === false) {
+    delete FakeAudioContext.prototype.close;
+  }
+
+  return FakeAudioContext;
 }
 
 function createSparseOfflineAudioContext() {

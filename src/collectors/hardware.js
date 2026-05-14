@@ -1,11 +1,11 @@
-import { detectBrowserQuirks, shouldSuppressSignal } from '../browser-quirks.js';
+import { detectBrowserQuirks, normalizeHardwareConcurrency } from '../browser-quirks.js';
 import { createCollector } from './core.js';
 import { getMatchMedia, getWindowRef, safeNumber } from './shared.js';
 
 export function createHardwareCollector() {
   return createCollector({
     id: 'hardware',
-    version: '2',
+    version: '3',
     category: 'hardware',
     sensitivity: 'medium',
     mode: 'passive',
@@ -19,7 +19,7 @@ export function createHardwareCollector() {
 
       const quirks = detectBrowserQuirks(context);
       return {
-        hardwareConcurrency: shouldSuppressSignal('hardware.concurrency', quirks) ? null : safeNumber(navigatorRef.hardwareConcurrency),
+        hardwareConcurrency: normalizeHardwareConcurrency(navigatorRef.hardwareConcurrency, quirks),
         deviceMemory: safeNumber(navigatorRef.deviceMemory),
         maxTouchPoints: safeNumber(navigatorRef.maxTouchPoints)
       };

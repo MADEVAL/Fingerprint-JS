@@ -24,9 +24,13 @@ This audit covers the current repository state: package metadata, source runtime
 - Storage is disabled by default and scoped by namespace when enabled.
 - The standalone browser build is smoke-tested through a restricted VM context.
 - Source files are split by responsibility while published builds remain bundled for package and script-tag usage.
-- Built-in collectors now cover substantially more browser entropy: client hints, screen frame, media preferences, touch, architecture, plugins, vendor flavors, PDF viewer, Apple Pay, Private Click Measurement, DOM blockers, fonts, audio, WebGL extensions, canvas, and math behavior.
-- Known unstable browser paths are handled through a dedicated quirk layer before collecting audio, canvas, screen frame, and hardware concurrency signals.
-- `loadClient()`, `prepare()`, `get()`, `client.debug()`, and `componentsToDebugString()` provide a more mature integration and diagnostics flow.
+- Built-in collectors now cover substantially more browser entropy: client hints, navigator properties, screen frame, media preferences, touch, architecture, storage capabilities, plugins, vendor flavors, PDF viewer, Apple Pay, Private Click Measurement, DOM blockers, fonts, audio latency, audio fingerprinting, WebGL extensions, canvas, and math behavior.
+- Known unstable browser paths are handled through a dedicated quirk layer before collecting audio, canvas, screen metrics, screen frame, and hardware concurrency signals.
+- `loadClient()`, `prepare()`, `get()`, `hashComponents()`, `client.debug()`, and `componentsToDebugString()` provide a more mature integration and diagnostics flow.
+- Collector preparation now preloads allowed sources, reuses prepared values, and respects consent requirements when configured.
+- Collection scheduling runs passive sources in parallel and active sources in declared order.
+- Font layout probing uses iframe isolation when available.
+- DOM blocker probing covers an expanded set of local bait categories.
 
 ## Implemented Improvements
 
@@ -38,6 +42,10 @@ This audit covers the current repository state: package metadata, source runtime
 - Added subpath exports for `./collectors`, `./policy`, and `./storage`.
 - Split built-in collectors into domain modules under `src/collectors/`.
 - Added `src/browser-quirks.js` for conservative browser-specific stabilization decisions.
+- Added a collector preparation lifecycle with active-source ordering.
+- Added public `hashComponents()` for product-side component filtering and ID recalculation.
+- Added navigator property and audio base latency collectors.
+- Added iframe-isolated font measurement and expanded DOM blocker baits.
 - Added `docs/VERSION_POLICY.md` for visitor identifier compatibility expectations.
 - Raised the bundle size budget from 30 KB to 45 KB after expanding the built-in collector pack.
 

@@ -1,4 +1,4 @@
-import { detectBrowserQuirks, shouldSuppressSignal } from '../browser-quirks.js';
+import { detectBrowserQuirks, getSuppressionReason, shouldSuppressSignal } from '../browser-quirks.js';
 import { createCollector } from './core.js';
 import { checksumString, safeNumber } from './shared.js';
 
@@ -72,7 +72,7 @@ export function createCanvasCollector() {
     collect(context) {
       const quirks = detectBrowserQuirks(context);
       if (shouldSuppressSignal('canvas', quirks)) {
-        return { status: 'suppressed', reason: 'known_canvas_randomization' };
+        return { status: 'suppressed', reason: getSuppressionReason('canvas', quirks) };
       }
 
       const canvas = createCanvas(context, 240, 80);
@@ -154,7 +154,7 @@ function renderGeometry(canvas, canvasContext) {
   canvasContext.arc(80, 42, 24, 0, Math.PI * 2, true);
   canvasContext.closePath();
   canvasContext.fill();
-  return summarizeDataUrl(canvas.toDataURL());
+  return summarizeCanvas(canvas);
 }
 
 function renderText(canvas, canvasContext) {
@@ -167,7 +167,7 @@ function renderText(canvas, canvasContext) {
   canvasContext.fillText('Fingerprint Framework 0.1', 2, 18);
   canvasContext.fillStyle = 'rgba(102, 204, 0, 0.65)';
   canvasContext.fillText('mwmw 12345', 4, 48);
-  return summarizeDataUrl(canvas.toDataURL());
+  return summarizeCanvas(canvas);
 }
 
 function resetCanvas(canvas, width, height) {
@@ -175,9 +175,18 @@ function resetCanvas(canvas, width, height) {
   canvas.height = height;
 }
 
-function summarizeDataUrl(dataUrl) {
-  return {
-    length: dataUrl.length,
-    checksum: checksumString(dataUrl)
-  };
+function summarizeCanvas(canvas) {
+  try {
+    const dataUrl = canvas.toDataURL();
+    return {
+      status: 'ok',
+      length: dataUrl.length,
+      checksum: checksumString(dataUrl)
+    };
+  } catch (error) {
+    return {
+      status: 'unstable',
+      reason: error && error.message ? String(error.message) : 'canvas_read_failed'
+    };
+  }
 }

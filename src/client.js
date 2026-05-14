@@ -1,6 +1,6 @@
 import { canonicalStringify } from './canonical.js';
 import { createDefaultCollectors } from './collectors/index.js';
-import { collectComponents, normalizeCollectors, redactComponent } from './components.js';
+import { collectPreparedComponents, normalizeCollectors, prepareCollectors, redactComponent } from './components.js';
 import { calculateConfidence, createHashPayload } from './confidence.js';
 import { SCHEMA_VERSION, VERSION } from './constants.js';
 import { hashValue } from './crypto.js';
@@ -15,7 +15,7 @@ export function createClient(options = {}) {
   const clientOptions = normalizeClientOptions(options);
   const collectors = normalizeCollectors(options.collectors || createDefaultCollectors());
   const policy = createPolicy(clientOptions.profile, options.policy || {});
-  const state = { preparedAt: null };
+  const state = { preparedAt: null, preparedValues: new Map() };
 
   const client = {
     version: VERSION,
@@ -27,18 +27,25 @@ export function createClient(options = {}) {
     async prepare(context = {}) {
       const runtime = createRuntimeContext(clientOptions, context);
       await waitForRuntimeIdle(runtime.global, clientOptions.loadDelayMs);
+      if (policy.requireConsent && !hasConsent(runtime.consent)) {
+        state.preparedValues = new Map();
+        state.preparedAt = new Date(runtime.now()).toISOString();
+        return client;
+      }
+
+      state.preparedValues = await prepareCollectors(collectors, policy, runtime, clientOptions.collectorTimeoutMs);
       state.preparedAt = new Date(runtime.now()).toISOString();
       return client;
     },
     async get(context = {}) {
-      return identifyWithCollectors(collectors, policy, clientOptions, context);
+      return identifyWithCollectors(collectors, policy, clientOptions, context, state.preparedValues);
     },
     async identify(context = {}) {
-      return identifyWithCollectors(collectors, policy, clientOptions, context);
+      return identifyWithCollectors(collectors, policy, clientOptions, context, state.preparedValues);
     },
     async components(context = {}) {
       const runtime = createRuntimeContext(clientOptions, context);
-      const collected = await collectComponents(collectors, policy, runtime, clientOptions.collectorTimeoutMs);
+      const collected = await collectPreparedComponents(collectors, policy, runtime, clientOptions.collectorTimeoutMs, state.preparedValues);
       return collected.map((component) => redactComponent(component, policy));
     },
     async debug(context = {}) {
@@ -50,7 +57,7 @@ export function createClient(options = {}) {
   return Object.freeze(client);
 }
 
-async function identifyWithCollectors(collectors, policy, clientOptions, context) {
+async function identifyWithCollectors(collectors, policy, clientOptions, context, preparedValues) {
   const startedAt = nowMs();
   const runtime = createRuntimeContext(clientOptions, context);
   const requestId = createRequestId(runtime);
@@ -67,7 +74,7 @@ async function identifyWithCollectors(collectors, policy, clientOptions, context
     });
   }
 
-  const components = await collectComponents(collectors, policy, runtime, clientOptions.collectorTimeoutMs);
+  const components = await collectPreparedComponents(collectors, policy, runtime, clientOptions.collectorTimeoutMs, preparedValues);
   const payload = createHashPayload(components, clientOptions.namespace, clientOptions.salt);
   const confidence = calculateConfidence(components, collectors, policy);
   const okComponentCount = components.filter((component) => component.status === 'ok').length;

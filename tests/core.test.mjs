@@ -6,9 +6,11 @@ import {
   createClient,
   createCollector,
   createPolicy,
+  hashComponents,
   hashValue,
   loadClient
 } from '../src/index.js';
+import { collectComponents } from '../src/components.js';
 
 test('canonicalStringify sorts object keys and removes unsupported values', () => {
   const value = {
@@ -95,6 +97,15 @@ test('policy skips high sensitivity active collectors in balanced profile', asyn
 
   assert.equal(active.status, 'skipped');
   assert.equal(result.components.find((component) => component.id === 'safe.signal').status, 'ok');
+});
+
+test('collectComponents remains available for internal direct collection', async () => {
+  const components = await collectComponents([
+    createCollector({ id: 'direct.component', collect: () => 'direct' })
+  ], createPolicy('extended'), { now: Date.now }, 0);
+
+  assert.equal(components[0].id, 'direct.component');
+  assert.equal(components[0].value, 'direct');
 });
 
 test('consent gate blocks collection when required consent is missing', async () => {
@@ -186,6 +197,117 @@ test('loadClient prepares a client and get aliases identify', async () => {
   const result = await client.get({ consent: true });
   assert.ok(result.visitorId);
   assert.equal(result.components[0].id, 'load.signal');
+});
+
+test('prepare preloads allowed collectors and active collectors run in declared order', async () => {
+  const events = [];
+  const client = createClient({
+    profile: 'extended',
+    collectors: [
+      createCollector({
+        id: 'passive.slow',
+        mode: 'passive',
+        prepare: () => {
+          events.push('prepare:passive.slow');
+          return 'passive-prepared';
+        },
+        collect: async () => {
+          events.push('passive:start');
+          await Promise.resolve();
+          events.push('passive:end');
+          return 'passive';
+        }
+      }),
+      createCollector({
+        id: 'active.prepared',
+        mode: 'active',
+        sensitivity: 'low',
+        prepare: () => {
+          events.push('prepare:active.prepared');
+          return 'prepared-value';
+        },
+        collect: (_context, prepared) => {
+          events.push(`collect:active.prepared:${prepared}`);
+          return prepared;
+        }
+      }),
+      createCollector({
+        id: 'active.second',
+        mode: 'active',
+        sensitivity: 'low',
+        collect: () => {
+          events.push('collect:active.second');
+          return 'second';
+        }
+      })
+    ]
+  });
+
+  await client.prepare({ consent: true });
+  const result = await client.identify({ consent: true });
+
+  assert.deepEqual(events, [
+    'prepare:passive.slow',
+    'prepare:active.prepared',
+    'passive:start',
+    'passive:end',
+    'collect:active.prepared:prepared-value',
+    'collect:active.second'
+  ]);
+  assert.equal(result.components.find((component) => component.id === 'active.prepared').value, 'prepared-value');
+});
+
+test('prepare respects consent requirements and falls back when preparation fails', async () => {
+  let prepared = 0;
+  const client = createClient({
+    profile: 'extended',
+    policy: { requireConsent: true },
+    collectors: [
+      createCollector({
+        id: 'prepare.private',
+        mode: 'active',
+        sensitivity: 'low',
+        prepare: () => {
+          prepared += 1;
+          throw new Error('prepare failed');
+        },
+        collect: (_context, value) => value || 'fallback'
+      })
+    ]
+  });
+
+  await client.prepare();
+  assert.equal(prepared, 0);
+
+  await client.prepare({ consent: true });
+  const result = await client.identify({ consent: true });
+
+  assert.equal(prepared, 1);
+  assert.equal(result.components[0].value, 'fallback');
+});
+
+test('hashComponents recalculates visitorId from component results', async () => {
+  const client = createClient({
+    namespace: 'hash-suite',
+    salt: 'salt',
+    collectors: [
+      createCollector({ id: 'hash.a', collect: () => 'a' }),
+      createCollector({ id: 'hash.b', collect: () => 'b' })
+    ]
+  });
+
+  const result = await client.identify({ consent: true });
+  const hashed = await hashComponents(result.components, { namespace: 'hash-suite', salt: 'salt' });
+  const changed = await hashComponents(result.components.filter((component) => component.id !== 'hash.b'), { namespace: 'hash-suite', salt: 'salt' });
+  const defaulted = await hashComponents([null, ...result.components]);
+  const empty = await hashComponents([], { namespace: 'hash-suite' });
+
+  assert.equal(hashed.visitorId, result.visitorId);
+  assert.notEqual(changed.visitorId, result.visitorId);
+  assert.equal(defaulted.namespace, 'default');
+  assert.ok(defaulted.visitorId);
+  assert.equal(empty.visitorId, null);
+  await assert.rejects(() => hashComponents(null), /components must be an array/u);
 });
 
 test('debug output formats component values and errors', async () => {

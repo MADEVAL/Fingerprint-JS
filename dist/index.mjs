@@ -75,6 +75,9 @@ function createCollector(definition) {
   if (typeof definition.collect !== "function") {
     throw new TypeError(`Collector ${definition.id} must provide collect(context).`);
   }
+  if (definition.prepare != null && typeof definition.prepare !== "function") {
+    throw new TypeError(`Collector ${definition.id} prepare must be a function when provided.`);
+  }
   const sensitivity = definition.sensitivity || "low";
   if (!SENSITIVITY_RANK[sensitivity]) {
     throw new TypeError(`Collector ${definition.id} has unknown sensitivity: ${sensitivity}`);
@@ -87,6 +90,7 @@ function createCollector(definition) {
     mode: definition.mode === "active" ? "active" : "passive",
     stability: definition.stability || "stable",
     weight: Number.isFinite(definition.weight) ? Math.max(0, Number(definition.weight)) : 1,
+    prepare: definition.prepare || null,
     collect: definition.collect
   });
 }
@@ -142,6 +146,23 @@ var VENDOR_GLOBALS = Object.freeze([
   ["edgeIos", "__edgeTrackingPreventionStatistics"],
   ["yandex", "yandex"],
   ["opera", "opr"]
+]);
+var DOM_BLOCKER_BAITS = Object.freeze([
+  ["generic-ad", "ad adsbox advertisement banner_ad pub_300x250 text-ad textAd"],
+  ["ad-server", "adserver ad-banner ad-unit ad-zone ad-placement"],
+  ["doubleclick", "doubleclick dart-ad"],
+  ["google-ads", "google-ad googleads adsbygoogle"],
+  ["sponsor", "sponsor sponsored-link sponsored_content"],
+  ["analytics", "tracking analytics pixel"],
+  ["social", "social-share social-widget facebook-like twitter-share"],
+  ["newsletter-popup", "newsletter-popup email-capture subscribe-modal"],
+  ["cookie-consent", "cookie-banner cookie-consent gdpr-consent"],
+  ["taboola", "taboola-outbrain trc_rbox"],
+  ["outbrain", "outbrain-widget ob-widget"],
+  ["yandex-direct", "yandex_rtb yandex-direct"],
+  ["amazon-ads", "amzn-native-ad apstag-ad"],
+  ["video-ads", "video-ads preroll-ads ima-ad-container"],
+  ["affiliate", "affiliate-link affiliate-widget"]
 ]);
 function createPluginsCollector() {
   return createCollector({
@@ -260,7 +281,7 @@ function createPrivateClickMeasurementCollector() {
 function createDomBlockersCollector() {
   return createCollector({
     id: "browser.domBlockers",
-    version: "1",
+    version: "2",
     category: "runtime",
     sensitivity: "medium",
     mode: "active",
@@ -283,7 +304,7 @@ function createDomBlockersCollector() {
       documentRef.body.appendChild(container);
       try {
         const blocked = baitElements.filter((bait) => isBlocked(bait.element, windowRef)).map((bait) => bait.name).sort();
-        return { checked: baitElements.length, blocked };
+        return { checked: baitElements.length, blocked, checksum: blocked.join("|") };
       } finally {
         if (container.parentNode && typeof container.parentNode.removeChild === "function") {
           container.parentNode.removeChild(container);
@@ -293,12 +314,7 @@ function createDomBlockersCollector() {
   });
 }
 function createBaitElements(documentRef) {
-  const baits = [
-    ["generic-ad", "ad adsbox advertisement banner_ad"],
-    ["sponsor", "sponsor sponsored-link"],
-    ["analytics", "tracking analytics pixel"]
-  ];
-  return baits.map(([name, className]) => {
+  return DOM_BLOCKER_BAITS.map(([name, className]) => {
     const element = documentRef.createElement("div");
     element.className = className;
     element.textContent = name;
@@ -329,19 +345,25 @@ function detectBrowserQuirks(context = {}) {
   const uaPlatform = String(uaData && uaData.platform || "");
   const brandNames = normalizeBrandNames(uaData && uaData.brands);
   const firefoxMatch = /Firefox\/(\d+)/u.exec(userAgent);
+  const firefoxIosMatch = /FxiOS\/(\d+)/u.exec(userAgent);
   const safariMatch = /Version\/(\d+)/u.exec(userAgent);
   const samsungMatch = /SamsungBrowser\/(\d+)/u.exec(userAgent);
-  const geckoMatch = /Gecko\//u.test(userAgent);
+  const chromeMatch = /(?:Chrome|Chromium|CriOS)\/(\d+)/u.exec(userAgent);
   const chromiumFromBrand = brandNames.some((name) => /Chromium|Google Chrome|Microsoft Edge/u.test(name));
   const chromiumFromUa = /Chrome\/|Chromium\/|CriOS\/|Edg\//u.test(userAgent);
-  const isFirefox = Boolean(firefoxMatch);
-  const isChromium = (chromiumFromBrand || chromiumFromUa) && !isFirefox;
+  const geckoFeature = "mozInnerScreenX" in windowRef || supportsCss(windowRef, "-moz-appearance", "none");
+  const chromiumFeature = Boolean(windowRef.chrome && (windowRef.chrome.runtime || windowRef.chrome.loadTimes || windowRef.chrome.csi));
+  const webKitFeature = "WebKitCSSMatrix" in windowRef || "webkitRequestAnimationFrame" in windowRef || supportsCss(windowRef, "-webkit-touch-callout", "none") || Boolean(windowRef.safari);
+  const isFirefox = Boolean(firefoxMatch || geckoFeature) && !/Seamonkey\//u.test(userAgent);
+  const isChromium = (chromiumFromBrand || chromiumFromUa || chromiumFeature) && !isFirefox;
   const isSafari = /Safari\//u.test(userAgent) && !isChromium && !/FxiOS\/|OPR\/|SamsungBrowser\//u.test(userAgent);
-  const isWebKit = /AppleWebKit\//u.test(userAgent) || Boolean(windowRef.safari);
+  const isWebKit = /AppleWebKit\//u.test(userAgent) || webKitFeature;
   const isIos = /iPad|iPhone|iPod/u.test(platform) || /iPad|iPhone|iPod/u.test(userAgent) || platform === "MacIntel" && safeNumber2(navigatorRef && navigatorRef.maxTouchPoints) > 1;
   const isAndroid = /Android/u.test(userAgent) || uaPlatform === "Android";
   const safariMajor = safariMatch ? Number(safariMatch[1]) : null;
   const firefoxMajor = firefoxMatch ? Number(firefoxMatch[1]) : null;
+  const firefoxIosMajor = firefoxIosMatch ? Number(firefoxIosMatch[1]) : null;
+  const chromiumMajor = chromeMatch ? Number(chromeMatch[1]) : null;
   const samsungMajor = samsungMatch ? Number(samsungMatch[1]) : null;
   const screenWidth = safeNumber2(screenRef && screenRef.width);
   const screenHeight = safeNumber2(screenRef && screenRef.height);
@@ -351,32 +373,74 @@ function detectBrowserQuirks(context = {}) {
     isAndroid,
     isChromium,
     isFirefox,
+    isFirefox120OrNewer: Boolean(isFirefox && firefoxMajor !== null && firefoxMajor >= 120),
+    isFirefox143OrNewer: Boolean(isFirefox && firefoxMajor !== null && firefoxMajor >= 143),
     isFirefoxResistFingerprintingLikely: Boolean(isFirefox && hardwareConcurrency === 2 && screenWidth === 1e3 && screenHeight === 1e3),
     isIos,
     isIosDesktopMode: Boolean(platform === "MacIntel" && safeNumber2(navigatorRef && navigatorRef.maxTouchPoints) > 1),
+    isOldMobileSafari: Boolean(isIos && isSafari && safariMajor !== null && safariMajor <= 11),
     isSafari,
     isSafari17OrNewer: Boolean(isSafari && safariMajor !== null && safariMajor >= 17),
     isSamsungInternet: Boolean(samsungMatch || brandNames.some((name) => /Samsung Internet/u.test(name))),
+    isSamsungInternet26OrNewer: Boolean((samsungMatch || brandNames.some((name) => /Samsung Internet/u.test(name))) && samsungMajor !== null && samsungMajor >= 26),
     isWebKit,
+    chromiumMajor,
     firefoxMajor,
+    firefoxIosMajor,
     safariMajor,
     samsungMajor
   });
 }
 function shouldSuppressSignal(signal, quirks) {
   if (signal === "audio") {
-    return Boolean(quirks.isSafari17OrNewer || quirks.isFirefoxResistFingerprintingLikely);
+    return Boolean(quirks.isSafari17OrNewer || quirks.isOldMobileSafari || quirks.isSamsungInternet26OrNewer || quirks.isFirefoxResistFingerprintingLikely);
   }
   if (signal === "canvas") {
+    return Boolean(quirks.isSafari17OrNewer || quirks.isFirefox120OrNewer || quirks.isFirefoxResistFingerprintingLikely);
+  }
+  if (signal === "screen.metrics") {
     return Boolean(quirks.isFirefoxResistFingerprintingLikely);
   }
   if (signal === "screen.frame") {
-    return Boolean(quirks.isSafari17OrNewer || quirks.isFirefoxResistFingerprintingLikely);
+    return Boolean(quirks.isSafari17OrNewer || quirks.isFirefox143OrNewer || quirks.isFirefoxResistFingerprintingLikely);
   }
   if (signal === "hardware.concurrency") {
-    return Boolean(quirks.isFirefoxResistFingerprintingLikely);
+    return false;
   }
   return false;
+}
+function getSuppressionReason(signal, quirks) {
+  if (!shouldSuppressSignal(signal, quirks)) {
+    return null;
+  }
+  if (quirks.isFirefoxResistFingerprintingLikely) {
+    return "firefox_resist_fingerprinting";
+  }
+  if (quirks.isSafari17OrNewer) {
+    return "safari_17_unstable_source";
+  }
+  if (quirks.isFirefox120OrNewer && signal === "canvas") {
+    return "firefox_canvas_randomization";
+  }
+  if (quirks.isFirefox143OrNewer && signal === "screen.frame") {
+    return "firefox_screen_frame_randomization";
+  }
+  if (quirks.isSamsungInternet26OrNewer) {
+    return "samsung_internet_audio_instability";
+  }
+  if (quirks.isOldMobileSafari) {
+    return "old_mobile_safari_audio_requires_gesture";
+  }
+}
+function normalizeHardwareConcurrency(value, quirks) {
+  const concurrency = safeNumber2(value);
+  if (concurrency === null) {
+    return null;
+  }
+  if (quirks.isFirefox143OrNewer || quirks.isFirefoxResistFingerprintingLikely) {
+    return concurrency <= 4 ? 4 : 8;
+  }
+  return concurrency;
 }
 function normalizeBrandNames(brands) {
   if (!Array.isArray(brands)) {
@@ -387,8 +451,16 @@ function normalizeBrandNames(brands) {
 function safeNumber2(value) {
   return Number.isFinite(value) ? Number(value) : null;
 }
+function supportsCss(windowRef, property, value) {
+  try {
+    return Boolean(windowRef.CSS && typeof windowRef.CSS.supports === "function" && windowRef.CSS.supports(property, value));
+  } catch (_error) {
+    return false;
+  }
+}
 
 // src/collectors/display.js
+var cachedScreenFrame = null;
 function createScreenCollector() {
   return createCollector({
     id: "screen.metrics",
@@ -403,14 +475,18 @@ function createScreenCollector() {
       if (!screenRef) {
         return null;
       }
+      const quirks = detectBrowserQuirks(context);
+      if (shouldSuppressSignal("screen.metrics", quirks)) {
+        return { status: "suppressed", reason: getSuppressionReason("screen.metrics", quirks) };
+      }
       return {
-        width: safeNumber(screenRef.width),
-        height: safeNumber(screenRef.height),
-        availWidth: safeNumber(screenRef.availWidth),
-        availHeight: safeNumber(screenRef.availHeight),
+        width: roundDimension(screenRef.width),
+        height: roundDimension(screenRef.height),
+        availWidth: roundDimension(screenRef.availWidth),
+        availHeight: roundDimension(screenRef.availHeight),
         colorDepth: safeNumber(screenRef.colorDepth),
         pixelDepth: safeNumber(screenRef.pixelDepth),
-        devicePixelRatio: safeNumber(context.global && context.global.devicePixelRatio)
+        devicePixelRatio: roundRatio(context.global && context.global.devicePixelRatio)
       };
     }
   });
@@ -427,7 +503,7 @@ function createScreenFrameCollector() {
     collect(context) {
       const quirks = detectBrowserQuirks(context);
       if (shouldSuppressSignal("screen.frame", quirks)) {
-        return { status: "suppressed", reason: "known_unstable_screen_frame" };
+        return { status: "suppressed", reason: getSuppressionReason("screen.frame", quirks) };
       }
       const windowRef = getWindowRef(context);
       const screenRef = context.screen;
@@ -438,7 +514,7 @@ function createScreenFrameCollector() {
       const outerHeight = safeNumber(windowRef.outerHeight);
       const innerWidth = safeNumber(windowRef.innerWidth);
       const innerHeight = safeNumber(windowRef.innerHeight);
-      return {
+      const frame = {
         outerWidth,
         outerHeight,
         innerWidth,
@@ -448,8 +524,17 @@ function createScreenFrameCollector() {
         frameWidth: outerWidth !== null && innerWidth !== null ? Math.max(0, outerWidth - innerWidth) : null,
         frameHeight: outerHeight !== null && innerHeight !== null ? Math.max(0, outerHeight - innerHeight) : null,
         availDeltaWidth: safeNumber(screenRef.width) !== null && safeNumber(screenRef.availWidth) !== null ? Math.max(0, Number(screenRef.width) - Number(screenRef.availWidth)) : null,
-        availDeltaHeight: safeNumber(screenRef.height) !== null && safeNumber(screenRef.availHeight) !== null ? Math.max(0, Number(screenRef.height) - Number(screenRef.availHeight)) : null
+        availDeltaHeight: safeNumber(screenRef.height) !== null && safeNumber(screenRef.availHeight) !== null ? Math.max(0, Number(screenRef.height) - Number(screenRef.availHeight)) : null,
+        fullscreen: isFullscreen(context),
+        cached: false
       };
+      if (!frame.fullscreen && hasUsableFrame(frame)) {
+        cachedScreenFrame = Object.freeze({ ...frame });
+      }
+      if (!frame.fullscreen && isZeroFrame(frame) && cachedScreenFrame) {
+        return { ...cachedScreenFrame, cached: true };
+      }
+      return frame;
     }
   });
 }
@@ -512,6 +597,25 @@ function matches(matchMedia, query) {
     return false;
   }
 }
+function roundDimension(value) {
+  const number = safeNumber(value);
+  return number === null ? null : Math.round(number);
+}
+function roundRatio(value) {
+  const number = safeNumber(value);
+  return number === null ? null : Math.round(number * 1e3) / 1e3;
+}
+function isFullscreen(context) {
+  const documentRef = context.document || null;
+  const windowRef = getWindowRef(context);
+  return Boolean(documentRef && (documentRef.fullscreenElement || documentRef.webkitFullscreenElement) || windowRef.fullScreen === true);
+}
+function hasUsableFrame(frame) {
+  return [frame.frameWidth, frame.frameHeight, frame.availDeltaWidth, frame.availDeltaHeight].some((value) => Number(value) > 0);
+}
+function isZeroFrame(frame) {
+  return [frame.frameWidth, frame.frameHeight, frame.availDeltaWidth, frame.availDeltaHeight].every((value) => value === 0);
+}
 
 // src/collectors/fonts.js
 var FONT_CANDIDATES = Object.freeze([
@@ -531,56 +635,76 @@ var BASE_FONTS = Object.freeze(["monospace", "sans-serif", "serif"]);
 function createFontsCollector() {
   return createCollector({
     id: "fonts.available",
-    version: "1",
+    version: "2",
     category: "fonts",
     sensitivity: "high",
     mode: "active",
     stability: "volatile",
     weight: 1.1,
-    collect(context) {
-      const documentRef = context.document;
-      if (!documentRef) {
-        return null;
+    prepare(context) {
+      return collectAvailableFonts(context);
+    },
+    collect(context, prepared) {
+      if (prepared !== void 0) {
+        return prepared;
       }
-      if (documentRef.fonts && typeof documentRef.fonts.check === "function") {
-        const available = FONT_CANDIDATES.filter((font) => documentRef.fonts.check(`12px "${font}"`));
-        return summarizeFonts("font-check", available);
-      }
-      const measured = measureFonts(documentRef);
-      return measured ? summarizeFonts("layout", measured) : null;
+      return collectAvailableFonts(context);
     }
   });
 }
 function createFontPreferencesCollector() {
   return createCollector({
     id: "fonts.preferences",
-    version: "1",
+    version: "2",
     category: "fonts",
     sensitivity: "medium",
     mode: "active",
     stability: "volatile",
     weight: 0.7,
-    collect(context) {
-      const documentRef = context.document;
-      if (!canMeasure(documentRef)) {
-        return null;
+    prepare(context) {
+      return collectFontPreferences(context);
+    },
+    collect(context, prepared) {
+      if (prepared !== void 0) {
+        return prepared;
       }
-      const container = createContainer(documentRef);
-      try {
-        documentRef.body.appendChild(container);
-        const sizes = {};
-        for (const family of BASE_FONTS) {
-          const element = createSpan(documentRef, family, "mmmmmmmmmmlli", "72px");
-          container.appendChild(element);
-          sizes[family] = {
-            width: safeNumber(element.offsetWidth),
-            height: safeNumber(element.offsetHeight)
-          };
-        }
-        return sizes;
-      } finally {
-        removeNode(container);
+      return collectFontPreferences(context);
+    }
+  });
+}
+function collectAvailableFonts(context) {
+  const documentRef = context.document;
+  if (!documentRef) {
+    return null;
+  }
+  if (documentRef.fonts && typeof documentRef.fonts.check === "function") {
+    const available = FONT_CANDIDATES.filter((font) => documentRef.fonts.check(`12px "${font}"`));
+    return summarizeFonts("font-check", available);
+  }
+  const measured = measureFonts(documentRef);
+  return measured ? summarizeFonts("layout", measured) : null;
+}
+function collectFontPreferences(context) {
+  const documentRef = context.document;
+  if (!canMeasure(documentRef)) {
+    return null;
+  }
+  return withMeasurementDocument(documentRef, (measurementDocument) => {
+    const container = createContainer(measurementDocument);
+    try {
+      measurementDocument.body.appendChild(container);
+      const sizes = {};
+      for (const family of BASE_FONTS) {
+        const element = createSpan(measurementDocument, family, "mmmmmmmmmmlli", "72px");
+        container.appendChild(element);
+        sizes[family] = {
+          width: safeNumber(element.offsetWidth),
+          height: safeNumber(element.offsetHeight)
+        };
       }
+      return sizes;
+    } finally {
+      removeNode(container);
     }
   });
 }
@@ -597,6 +721,9 @@ function measureFonts(documentRef) {
   if (!canMeasure(documentRef)) {
     return null;
   }
+  return withMeasurementDocument(documentRef, (measurementDocument) => measureFontsInDocument(measurementDocument));
+}
+function measureFontsInDocument(documentRef) {
   const container = createContainer(documentRef);
   try {
     documentRef.body.appendChild(container);
@@ -615,6 +742,40 @@ function measureFonts(documentRef) {
     return available;
   } finally {
     removeNode(container);
+  }
+}
+function withMeasurementDocument(documentRef, callback) {
+  const frame = createMeasurementFrame(documentRef);
+  if (!frame) {
+    return callback(documentRef);
+  }
+  try {
+    documentRef.body.appendChild(frame);
+    const measurementDocument = frame.contentDocument || frame.contentWindow && frame.contentWindow.document;
+    if (canMeasure(measurementDocument)) {
+      return callback(measurementDocument);
+    }
+    return callback(documentRef);
+  } finally {
+    removeNode(frame);
+  }
+}
+function createMeasurementFrame(documentRef) {
+  try {
+    const frame = documentRef.createElement("iframe");
+    if (!frame || !frame.style) {
+      return null;
+    }
+    frame.setAttribute && frame.setAttribute("aria-hidden", "true");
+    frame.style.position = "absolute";
+    frame.style.visibility = "hidden";
+    frame.style.left = "-10000px";
+    frame.style.top = "-10000px";
+    frame.style.width = "0";
+    frame.style.height = "0";
+    return frame;
+  } catch (_error) {
+    return null;
   }
 }
 function isFontAvailable(documentRef, container, font, baseMeasurements) {
@@ -726,7 +887,7 @@ function createCanvasCollector() {
     collect(context) {
       const quirks = detectBrowserQuirks(context);
       if (shouldSuppressSignal("canvas", quirks)) {
-        return { status: "suppressed", reason: "known_canvas_randomization" };
+        return { status: "suppressed", reason: getSuppressionReason("canvas", quirks) };
       }
       const canvas = createCanvas(context, 240, 80);
       if (!canvas) {
@@ -795,7 +956,7 @@ function renderGeometry(canvas, canvasContext) {
   canvasContext.arc(80, 42, 24, 0, Math.PI * 2, true);
   canvasContext.closePath();
   canvasContext.fill();
-  return summarizeDataUrl(canvas.toDataURL());
+  return summarizeCanvas(canvas);
 }
 function renderText(canvas, canvasContext) {
   resetCanvas(canvas, 240, 80);
@@ -807,24 +968,33 @@ function renderText(canvas, canvasContext) {
   canvasContext.fillText("Fingerprint Framework 0.1", 2, 18);
   canvasContext.fillStyle = "rgba(102, 204, 0, 0.65)";
   canvasContext.fillText("mwmw 12345", 4, 48);
-  return summarizeDataUrl(canvas.toDataURL());
+  return summarizeCanvas(canvas);
 }
 function resetCanvas(canvas, width, height) {
   canvas.width = width;
   canvas.height = height;
 }
-function summarizeDataUrl(dataUrl) {
-  return {
-    length: dataUrl.length,
-    checksum: checksumString(dataUrl)
-  };
+function summarizeCanvas(canvas) {
+  try {
+    const dataUrl = canvas.toDataURL();
+    return {
+      status: "ok",
+      length: dataUrl.length,
+      checksum: checksumString(dataUrl)
+    };
+  } catch (error) {
+    return {
+      status: "unstable",
+      reason: error && error.message ? String(error.message) : "canvas_read_failed"
+    };
+  }
 }
 
 // src/collectors/hardware.js
 function createHardwareCollector() {
   return createCollector({
     id: "hardware",
-    version: "2",
+    version: "3",
     category: "hardware",
     sensitivity: "medium",
     mode: "passive",
@@ -837,7 +1007,7 @@ function createHardwareCollector() {
       }
       const quirks = detectBrowserQuirks(context);
       return {
-        hardwareConcurrency: shouldSuppressSignal("hardware.concurrency", quirks) ? null : safeNumber(navigatorRef.hardwareConcurrency),
+        hardwareConcurrency: normalizeHardwareConcurrency(navigatorRef.hardwareConcurrency, quirks),
         deviceMemory: safeNumber(navigatorRef.deviceMemory),
         maxTouchPoints: safeNumber(navigatorRef.maxTouchPoints)
       };
@@ -995,25 +1165,72 @@ function createMathCollector() {
 function createAudioCollector() {
   return createCollector({
     id: "audio.fingerprint",
-    version: "1",
+    version: "2",
     category: "media",
     sensitivity: "high",
     mode: "active",
     stability: "stable",
     weight: 1.2,
-    async collect(context) {
-      const quirks = detectBrowserQuirks(context);
-      if (shouldSuppressSignal("audio", quirks)) {
-        return { status: "suppressed", reason: "known_unstable_audio" };
+    async prepare(context) {
+      return collectAudioFingerprint(context);
+    },
+    async collect(context, prepared) {
+      if (prepared !== void 0) {
+        return prepared;
       }
-      const windowRef = getWindowRef(context);
-      const OfflineAudioContext = windowRef.OfflineAudioContext || windowRef.webkitOfflineAudioContext;
-      if (typeof OfflineAudioContext !== "function") {
-        return { status: "unsupported" };
-      }
-      return renderAudio(OfflineAudioContext);
+      return collectAudioFingerprint(context);
     }
   });
+}
+function createAudioBaseLatencyCollector() {
+  return createCollector({
+    id: "audio.baseLatency",
+    version: "1",
+    category: "media",
+    sensitivity: "medium",
+    mode: "active",
+    stability: "stable",
+    weight: 0.45,
+    collect(context) {
+      const quirks = detectBrowserQuirks(context);
+      if (shouldSuppressSignal("audio", quirks)) {
+        return { status: "suppressed", reason: getSuppressionReason("audio", quirks) };
+      }
+      const windowRef = getWindowRef(context);
+      const AudioContext = windowRef.AudioContext || windowRef.webkitAudioContext;
+      if (typeof AudioContext !== "function") {
+        return { status: "unsupported" };
+      }
+      try {
+        const audioContext = new AudioContext();
+        const value = {
+          status: "ok",
+          baseLatency: safeNumber(audioContext.baseLatency),
+          outputLatency: safeNumber(audioContext.outputLatency),
+          sampleRate: safeNumber(audioContext.sampleRate),
+          state: typeof audioContext.state === "string" ? audioContext.state : null
+        };
+        if (typeof audioContext.close === "function") {
+          void audioContext.close();
+        }
+        return value;
+      } catch (error) {
+        return { status: "error", message: error && error.message ? String(error.message) : "audio_context_error" };
+      }
+    }
+  });
+}
+async function collectAudioFingerprint(context) {
+  const quirks = detectBrowserQuirks(context);
+  if (shouldSuppressSignal("audio", quirks)) {
+    return { status: "suppressed", reason: getSuppressionReason("audio", quirks) };
+  }
+  const windowRef = getWindowRef(context);
+  const OfflineAudioContext = windowRef.OfflineAudioContext || windowRef.webkitOfflineAudioContext;
+  if (typeof OfflineAudioContext !== "function") {
+    return { status: "unsupported" };
+  }
+  return renderAudio(OfflineAudioContext);
 }
 async function renderAudio(OfflineAudioContext) {
   const length = 4096;
@@ -1182,6 +1399,32 @@ function createClientHintsCollector() {
     }
   });
 }
+function createNavigatorPropertiesCollector() {
+  return createCollector({
+    id: "runtime.navigatorProperties",
+    version: "1",
+    category: "runtime",
+    sensitivity: "low",
+    mode: "passive",
+    stability: "stable",
+    weight: 0.45,
+    collect(context) {
+      const navigatorRef = context.navigator;
+      if (!navigatorRef) {
+        return null;
+      }
+      return {
+        vendor: safeString(navigatorRef.vendor),
+        vendorSub: safeString(navigatorRef.vendorSub),
+        product: safeString(navigatorRef.product),
+        productSub: safeString(navigatorRef.productSub),
+        oscpu: safeString(navigatorRef.oscpu),
+        cpuClass: safeString(navigatorRef.cpuClass),
+        buildId: safeString(navigatorRef.buildID || navigatorRef.buildId)
+      };
+    }
+  });
+}
 function createNodeRuntimeCollector() {
   return createCollector({
     id: "runtime.node",
@@ -1338,6 +1581,7 @@ function createDefaultCollectors() {
   return [
     createBrowserRuntimeCollector(),
     createClientHintsCollector(),
+    createNavigatorPropertiesCollector(),
     createNodeRuntimeCollector(),
     createLocaleCollector(),
     createDateTimeLocaleCollector(),
@@ -1358,6 +1602,7 @@ function createDefaultCollectors() {
     createDomBlockersCollector(),
     createFontsCollector(),
     createFontPreferencesCollector(),
+    createAudioBaseLatencyCollector(),
     createAudioCollector(),
     createWebglCollector(),
     createWebglExtensionsCollector(),
@@ -1440,14 +1685,45 @@ function normalizeCollectors(collectors) {
     return normalized;
   });
 }
-async function collectComponents(collectors, policy, runtime, timeoutMs) {
-  const tasks = collectors.map((collector) => {
-    if (!isCollectorAllowed(collector, policy)) {
-      return Promise.resolve(createSkippedComponent(collector, "policy_denied"));
+async function prepareCollectors(collectors, policy, runtime, timeoutMs) {
+  const allowed = collectors.filter((collector) => collector.prepare && isCollectorAllowed(collector, policy));
+  const preparedValues = /* @__PURE__ */ new Map();
+  const passiveCollectors = allowed.filter((collector) => collector.mode !== "active");
+  const activeCollectors = allowed.filter((collector) => collector.mode === "active");
+  const passiveValues = await Promise.all(passiveCollectors.map((collector) => prepareOneCollector(collector, runtime, timeoutMs)));
+  for (let index = 0; index < passiveCollectors.length; index += 1) {
+    if (passiveValues[index].ok) {
+      preparedValues.set(passiveCollectors[index].id, passiveValues[index].value);
     }
-    return collectOneComponent(collector, runtime, timeoutMs);
-  });
-  const components = await Promise.all(tasks);
+  }
+  for (const collector of activeCollectors) {
+    const prepared = await prepareOneCollector(collector, runtime, timeoutMs);
+    if (prepared.ok) {
+      preparedValues.set(collector.id, prepared.value);
+    }
+  }
+  return preparedValues;
+}
+async function collectPreparedComponents(collectors, policy, runtime, timeoutMs, preparedValues) {
+  const skipped = [];
+  const allowed = [];
+  for (const collector of collectors) {
+    if (!isCollectorAllowed(collector, policy)) {
+      skipped.push(createSkippedComponent(collector, "policy_denied"));
+    } else {
+      allowed.push(collector);
+    }
+  }
+  const passiveCollectors = allowed.filter((collector) => collector.mode !== "active");
+  const activeCollectors = allowed.filter((collector) => collector.mode === "active");
+  const passiveComponents = await Promise.all(
+    passiveCollectors.map((collector) => collectOneComponent(collector, runtime, timeoutMs, preparedValues))
+  );
+  const activeComponents = [];
+  for (const collector of activeCollectors) {
+    activeComponents.push(await collectOneComponent(collector, runtime, timeoutMs, preparedValues));
+  }
+  const components = skipped.concat(passiveComponents, activeComponents);
   return components.sort((left, right) => left.id.localeCompare(right.id));
 }
 function redactComponent(component, policy) {
@@ -1459,10 +1735,12 @@ function redactComponent(component, policy) {
     value: "[redacted]"
   });
 }
-async function collectOneComponent(collector, runtime, timeoutMs) {
+async function collectOneComponent(collector, runtime, timeoutMs, preparedValues) {
   const startedAt = nowMs();
   try {
-    const value = await withTimeout(Promise.resolve().then(() => collector.collect(runtime)), timeoutMs, collector.id);
+    const hasPrepared = preparedValues instanceof Map && preparedValues.has(collector.id);
+    const prepared = hasPrepared ? preparedValues.get(collector.id) : void 0;
+    const value = await withTimeout(Promise.resolve().then(() => collector.collect(runtime, prepared)), timeoutMs, collector.id);
     const canonicalValue = toCanonical(value);
     const status = canonicalValue === null ? "empty" : "ok";
     return freezeComponent({
@@ -1492,6 +1770,14 @@ async function collectOneComponent(collector, runtime, timeoutMs) {
       durationMs: elapsedSince(startedAt),
       error: normalizeError(error)
     });
+  }
+}
+async function prepareOneCollector(collector, runtime, timeoutMs) {
+  try {
+    const value = await withTimeout(Promise.resolve().then(() => collector.prepare(runtime)), timeoutMs, `${collector.id}:prepare`);
+    return Object.freeze({ ok: true, value });
+  } catch (_error) {
+    return Object.freeze({ ok: false, value: void 0 });
   }
 }
 function createSkippedComponent(collector, reason) {
@@ -1725,7 +2011,7 @@ function createClient(options = {}) {
   const clientOptions = normalizeClientOptions(options);
   const collectors = normalizeCollectors(options.collectors || createDefaultCollectors());
   const policy = createPolicy(clientOptions.profile, options.policy || {});
-  const state = { preparedAt: null };
+  const state = { preparedAt: null, preparedValues: /* @__PURE__ */ new Map() };
   const client = {
     version: VERSION,
     profile: clientOptions.profile,
@@ -1736,18 +2022,24 @@ function createClient(options = {}) {
     async prepare(context = {}) {
       const runtime = createRuntimeContext(clientOptions, context);
       await waitForRuntimeIdle(runtime.global, clientOptions.loadDelayMs);
+      if (policy.requireConsent && !hasConsent(runtime.consent)) {
+        state.preparedValues = /* @__PURE__ */ new Map();
+        state.preparedAt = new Date(runtime.now()).toISOString();
+        return client;
+      }
+      state.preparedValues = await prepareCollectors(collectors, policy, runtime, clientOptions.collectorTimeoutMs);
       state.preparedAt = new Date(runtime.now()).toISOString();
       return client;
     },
     async get(context = {}) {
-      return identifyWithCollectors(collectors, policy, clientOptions, context);
+      return identifyWithCollectors(collectors, policy, clientOptions, context, state.preparedValues);
     },
     async identify(context = {}) {
-      return identifyWithCollectors(collectors, policy, clientOptions, context);
+      return identifyWithCollectors(collectors, policy, clientOptions, context, state.preparedValues);
     },
     async components(context = {}) {
       const runtime = createRuntimeContext(clientOptions, context);
-      const collected = await collectComponents(collectors, policy, runtime, clientOptions.collectorTimeoutMs);
+      const collected = await collectPreparedComponents(collectors, policy, runtime, clientOptions.collectorTimeoutMs, state.preparedValues);
       return collected.map((component) => redactComponent(component, policy));
     },
     async debug(context = {}) {
@@ -1757,7 +2049,7 @@ function createClient(options = {}) {
   };
   return Object.freeze(client);
 }
-async function identifyWithCollectors(collectors, policy, clientOptions, context) {
+async function identifyWithCollectors(collectors, policy, clientOptions, context, preparedValues) {
   const startedAt = nowMs();
   const runtime = createRuntimeContext(clientOptions, context);
   const requestId = createRequestId(runtime);
@@ -1772,7 +2064,7 @@ async function identifyWithCollectors(collectors, policy, clientOptions, context
       durationMs: elapsedSince(startedAt)
     });
   }
-  const components = await collectComponents(collectors, policy, runtime, clientOptions.collectorTimeoutMs);
+  const components = await collectPreparedComponents(collectors, policy, runtime, clientOptions.collectorTimeoutMs, preparedValues);
   const payload = createHashPayload(components, clientOptions.namespace, clientOptions.salt);
   const confidence = calculateConfidence(components, collectors, policy);
   const okComponentCount = components.filter((component) => component.status === "ok").length;
@@ -1825,6 +2117,24 @@ function createBlockedResult(details) {
   });
 }
 
+// src/hash-components.js
+async function hashComponents(components, options = {}, context = {}) {
+  if (!Array.isArray(components)) {
+    throw new TypeError("components must be an array.");
+  }
+  const namespace = String(options.namespace || "default");
+  const salt = String(options.salt || "");
+  const validComponents = components.filter((component) => component && typeof component === "object");
+  const okComponentCount = validComponents.filter((component) => component.status === "ok").length;
+  if (okComponentCount === 0) {
+    return Object.freeze({ visitorId: null, hashAlgorithm: null, namespace });
+  }
+  const runtime = createRuntimeContext({ consent: null, now: Date.now }, context);
+  const payload = createHashPayload(validComponents, namespace, salt);
+  const hash = await hashValue(canonicalStringify(payload), runtime);
+  return Object.freeze({ visitorId: hash.value, hashAlgorithm: hash.algorithm, namespace });
+}
+
 // src/loader.js
 async function loadClient(options = {}, context = {}) {
   const client = createClient(options);
@@ -1841,6 +2151,7 @@ export {
   createCollector,
   createDefaultCollectors,
   createPolicy,
+  hashComponents,
   hashValue,
   loadClient
 };

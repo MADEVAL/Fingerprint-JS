@@ -90,6 +90,34 @@ export function createClientHintsCollector() {
   });
 }
 
+export function createNavigatorPropertiesCollector() {
+  return createCollector({
+    id: 'runtime.navigatorProperties',
+    version: '1',
+    category: 'runtime',
+    sensitivity: 'low',
+    mode: 'passive',
+    stability: 'stable',
+    weight: 0.45,
+    collect(context) {
+      const navigatorRef = context.navigator;
+      if (!navigatorRef) {
+        return null;
+      }
+
+      return {
+        vendor: safeString(navigatorRef.vendor),
+        vendorSub: safeString(navigatorRef.vendorSub),
+        product: safeString(navigatorRef.product),
+        productSub: safeString(navigatorRef.productSub),
+        oscpu: safeString(navigatorRef.oscpu),
+        cpuClass: safeString(navigatorRef.cpuClass),
+        buildId: safeString(navigatorRef.buildID || navigatorRef.buildId)
+      };
+    }
+  });
+}
+
 export function createNodeRuntimeCollector() {
   return createCollector({
     id: 'runtime.node',

@@ -25,15 +25,56 @@ export function normalizeCollectors(collectors) {
 }
 
 export async function collectComponents(collectors, policy, runtime, timeoutMs) {
-  const tasks = collectors.map((collector) => {
-    if (!isCollectorAllowed(collector, policy)) {
-      return Promise.resolve(createSkippedComponent(collector, 'policy_denied'));
+  return collectPreparedComponents(collectors, policy, runtime, timeoutMs, null);
+}
+
+export async function prepareCollectors(collectors, policy, runtime, timeoutMs) {
+  const allowed = collectors.filter((collector) => collector.prepare && isCollectorAllowed(collector, policy));
+  const preparedValues = new Map();
+  const passiveCollectors = allowed.filter((collector) => collector.mode !== 'active');
+  const activeCollectors = allowed.filter((collector) => collector.mode === 'active');
+
+  const passiveValues = await Promise.all(passiveCollectors.map((collector) => prepareOneCollector(collector, runtime, timeoutMs)));
+  for (let index = 0; index < passiveCollectors.length; index += 1) {
+    if (passiveValues[index].ok) {
+      preparedValues.set(passiveCollectors[index].id, passiveValues[index].value);
     }
+  }
 
-    return collectOneComponent(collector, runtime, timeoutMs);
-  });
+  for (const collector of activeCollectors) {
+    const prepared = await prepareOneCollector(collector, runtime, timeoutMs);
+    if (prepared.ok) {
+      preparedValues.set(collector.id, prepared.value);
+    }
+  }
 
-  const components = await Promise.all(tasks);
+  return preparedValues;
+}
+
+export async function collectPreparedComponents(collectors, policy, runtime, timeoutMs, preparedValues) {
+  const skipped = [];
+  const allowed = [];
+
+  for (const collector of collectors) {
+    if (!isCollectorAllowed(collector, policy)) {
+      skipped.push(createSkippedComponent(collector, 'policy_denied'));
+    } else {
+      allowed.push(collector);
+    }
+  }
+
+  const passiveCollectors = allowed.filter((collector) => collector.mode !== 'active');
+  const activeCollectors = allowed.filter((collector) => collector.mode === 'active');
+  const passiveComponents = await Promise.all(
+    passiveCollectors.map((collector) => collectOneComponent(collector, runtime, timeoutMs, preparedValues))
+  );
+
+  const activeComponents = [];
+  for (const collector of activeCollectors) {
+    activeComponents.push(await collectOneComponent(collector, runtime, timeoutMs, preparedValues));
+  }
+
+  const components = skipped.concat(passiveComponents, activeComponents);
   return components.sort((left, right) => left.id.localeCompare(right.id));
 }
 
@@ -48,11 +89,13 @@ export function redactComponent(component, policy) {
   });
 }
 
-async function collectOneComponent(collector, runtime, timeoutMs) {
+async function collectOneComponent(collector, runtime, timeoutMs, preparedValues) {
   const startedAt = nowMs();
 
   try {
-    const value = await withTimeout(Promise.resolve().then(() => collector.collect(runtime)), timeoutMs, collector.id);
+    const hasPrepared = preparedValues instanceof Map && preparedValues.has(collector.id);
+    const prepared = hasPrepared ? preparedValues.get(collector.id) : undefined;
+    const value = await withTimeout(Promise.resolve().then(() => collector.collect(runtime, prepared)), timeoutMs, collector.id);
     const canonicalValue = toCanonical(value);
     const status = canonicalValue === null ? 'empty' : 'ok';
 
@@ -83,6 +126,15 @@ async function collectOneComponent(collector, runtime, timeoutMs) {
       durationMs: elapsedSince(startedAt),
       error: normalizeError(error)
     });
+  }
+}
+
+async function prepareOneCollector(collector, runtime, timeoutMs) {
+  try {
+    const value = await withTimeout(Promise.resolve().then(() => collector.prepare(runtime)), timeoutMs, `${collector.id}:prepare`);
+    return Object.freeze({ ok: true, value });
+  } catch (_error) {
+    return Object.freeze({ ok: false, value: undefined });
   }
 }
 

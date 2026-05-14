@@ -70,7 +70,7 @@ const result = await client.get(context);
 - confidence scoring;
 - optional storage state updates.
 
-`loadClient(options, context)` creates a client and calls `prepare(context)`. `prepare()` waits for an idle browser moment when available and records `preparedAt`; it does not collect high-sensitivity signals by itself. `get()` is an alias for `identify()` for FingerprintJS-style integrations.
+`loadClient(options, context)` creates a client and calls `prepare(context)`. `prepare()` waits for an idle browser moment when available, checks consent when required, prepares allowed collectors that expose a `prepare(context)` hook, and records `preparedAt`. Prepared values are reused by later `get()` / `identify()` calls. `get()` is an alias for `identify()` for FingerprintJS-style integrations.
 
 ### 5.2 Collector API
 
@@ -85,8 +85,12 @@ createCollector({
   mode: 'passive',
   stability: 'stable',
   weight: 1.2,
-  collect(context) {
-    return { width: screen.width, height: screen.height };
+  prepare(context) {
+    return context.screen ? { width: context.screen.width, height: context.screen.height } : null;
+  },
+  collect(context, prepared) {
+    if (prepared) return prepared;
+    return context.screen ? { width: context.screen.width, height: context.screen.height } : null;
   }
 });
 ```
@@ -95,9 +99,17 @@ Collector requirements:
 
 - `id` must be stable and unique;
 - `collect` can be synchronous or asynchronous;
+- optional `prepare` can preload expensive or timing-sensitive data;
 - collector errors must not break the whole `identify` call;
 - collector output passes through canonical normalization;
 - high-sensitivity collectors are disabled by policy unless the selected profile allows them.
+
+Collection scheduling:
+
+- passive collectors run in parallel;
+- active collectors run sequentially in declared order;
+- disallowed collectors are represented as skipped components;
+- preparation follows the same policy constraints and runs active preparations sequentially.
 
 ### 5.3 Policy Layer
 
@@ -134,6 +146,8 @@ Algorithm:
 - primary: SHA-256 through Web Crypto or Node Crypto;
 - fallback: deterministic non-cryptographic hash for constrained runtimes, with explicit algorithm metadata.
 
+`hashComponents(components, options, context)` exposes the same payload hashing logic for integrations that need to remove, keep, or inspect components before recalculating an identifier.
+
 ### 5.5 Confidence Scoring
 
 `confidence` should describe result quality, not promise absolute uniqueness:
@@ -160,6 +174,7 @@ Minimum set:
 
 - `runtime.browser`: user agent, platform, vendor, webdriver, UA Client Hints basic data;
 - `runtime.clientHints`: high-entropy UA Client Hints when the browser exposes them;
+- `runtime.navigatorProperties`: vendor, vendorSub, product, productSub, oscpu, cpuClass, build identifier;
 - `runtime.node`: Node version/platform/arch for server and test runtimes;
 - `locale`: language, languages, Intl locale;
 - `locale.datetime`: calendar, numbering system, hour cycle;
@@ -167,7 +182,7 @@ Minimum set:
 - `screen.metrics`: screen size, color depth, DPR;
 - `screen.frame`: browser chrome/frame metrics with unstable Safari/Firefox paths suppressed;
 - `display.mediaPreferences`: color gamut, forced/inverted colors, contrast, motion, transparency, HDR, monochrome;
-- `hardware`: concurrency, device memory, touch points, with RFP-like hardware counts suppressed;
+- `hardware`: concurrency, device memory, touch points, with Firefox 143+ and RFP-like concurrency values normalized into stable tiers;
 - `hardware.touch`: touch event and pointer media-query support;
 - `hardware.architecture`: typed-array architecture byte pattern;
 - `storage.capabilities`: cookies, IndexedDB, localStorage/sessionStorage, openDatabase, Do Not Track;
@@ -176,9 +191,10 @@ Minimum set:
 - `browser.pdfViewer`: native PDF viewer flag;
 - `browser.applePay`: Apple Pay API availability state;
 - `browser.privateClickMeasurement`: WebKit Private Click Measurement marker;
-- `browser.domBlockers`: local DOM bait checks for content blocker signals, active and volatile;
-- `fonts.available`: font availability through FontFaceSet or layout measurement, active and volatile;
+- `browser.domBlockers`: expanded local DOM bait checks for content blocker signals, active and volatile;
+- `fonts.available`: font availability through FontFaceSet or iframe-isolated layout measurement, active and volatile;
 - `fonts.preferences`: default font metrics, active and volatile;
+- `audio.baseLatency`: AudioContext latency and sample-rate metadata with unstable browser suppression;
 - `audio.fingerprint`: OfflineAudioContext checksum with unstable browser suppression;
 - `webgl.renderer`: WebGL vendor/renderer data, high sensitivity, active;
 - `webgl.extensions`: WebGL extensions and limits, high sensitivity, active;

@@ -12,14 +12,15 @@ import { createCanvasCollector, createWebglCollector, createWebglExtensionsColle
 import { createArchitectureCollector, createHardwareCollector, createTouchSupportCollector } from './hardware.js';
 import { createDateTimeLocaleCollector, createLocaleCollector, createTimezoneCollector } from './locale.js';
 import { createMathCollector } from './math.js';
-import { createAudioCollector } from './media.js';
-import { createBrowserRuntimeCollector, createClientHintsCollector, createNodeRuntimeCollector } from './runtime.js';
+import { createAudioBaseLatencyCollector, createAudioCollector } from './media.js';
+import { createBrowserRuntimeCollector, createClientHintsCollector, createNavigatorPropertiesCollector, createNodeRuntimeCollector } from './runtime.js';
 import { createStorageCapabilitiesCollector } from './storage-signals.js';
 
 export function createDefaultCollectors() {
   return [
     createBrowserRuntimeCollector(),
     createClientHintsCollector(),
+    createNavigatorPropertiesCollector(),
     createNodeRuntimeCollector(),
     createLocaleCollector(),
     createDateTimeLocaleCollector(),
@@ -40,6 +41,7 @@ export function createDefaultCollectors() {
     createDomBlockersCollector(),
     createFontsCollector(),
     createFontPreferencesCollector(),
+    createAudioBaseLatencyCollector(),
     createAudioCollector(),
     createWebglCollector(),
     createWebglExtensionsCollector(),

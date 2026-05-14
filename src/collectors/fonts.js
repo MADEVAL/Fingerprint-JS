@@ -20,25 +20,21 @@ const BASE_FONTS = Object.freeze(['monospace', 'sans-serif', 'serif']);
 export function createFontsCollector() {
   return createCollector({
     id: 'fonts.available',
-    version: '1',
+    version: '2',
     category: 'fonts',
     sensitivity: 'high',
     mode: 'active',
     stability: 'volatile',
     weight: 1.1,
-    collect(context) {
-      const documentRef = context.document;
-      if (!documentRef) {
-        return null;
+    prepare(context) {
+      return collectAvailableFonts(context);
+    },
+    collect(context, prepared) {
+      if (prepared !== undefined) {
+        return prepared;
       }
 
-      if (documentRef.fonts && typeof documentRef.fonts.check === 'function') {
-        const available = FONT_CANDIDATES.filter((font) => documentRef.fonts.check(`12px "${font}"`));
-        return summarizeFonts('font-check', available);
-      }
-
-      const measured = measureFonts(documentRef);
-      return measured ? summarizeFonts('layout', measured) : null;
+      return collectAvailableFonts(context);
     }
   });
 }
@@ -46,35 +42,63 @@ export function createFontsCollector() {
 export function createFontPreferencesCollector() {
   return createCollector({
     id: 'fonts.preferences',
-    version: '1',
+    version: '2',
     category: 'fonts',
     sensitivity: 'medium',
     mode: 'active',
     stability: 'volatile',
     weight: 0.7,
-    collect(context) {
-      const documentRef = context.document;
-      if (!canMeasure(documentRef)) {
-        return null;
+    prepare(context) {
+      return collectFontPreferences(context);
+    },
+    collect(context, prepared) {
+      if (prepared !== undefined) {
+        return prepared;
       }
 
-      const container = createContainer(documentRef);
-      try {
-        documentRef.body.appendChild(container);
-        const sizes = {};
-        for (const family of BASE_FONTS) {
-          const element = createSpan(documentRef, family, 'mmmmmmmmmmlli', '72px');
-          container.appendChild(element);
-          sizes[family] = {
-            width: safeNumber(element.offsetWidth),
-            height: safeNumber(element.offsetHeight)
-          };
-        }
+      return collectFontPreferences(context);
+    }
+  });
+}
 
-        return sizes;
-      } finally {
-        removeNode(container);
+function collectAvailableFonts(context) {
+  const documentRef = context.document;
+  if (!documentRef) {
+    return null;
+  }
+
+  if (documentRef.fonts && typeof documentRef.fonts.check === 'function') {
+    const available = FONT_CANDIDATES.filter((font) => documentRef.fonts.check(`12px "${font}"`));
+    return summarizeFonts('font-check', available);
+  }
+
+  const measured = measureFonts(documentRef);
+  return measured ? summarizeFonts('layout', measured) : null;
+}
+
+function collectFontPreferences(context) {
+  const documentRef = context.document;
+  if (!canMeasure(documentRef)) {
+    return null;
+  }
+
+  return withMeasurementDocument(documentRef, (measurementDocument) => {
+    const container = createContainer(measurementDocument);
+    try {
+      measurementDocument.body.appendChild(container);
+      const sizes = {};
+      for (const family of BASE_FONTS) {
+        const element = createSpan(measurementDocument, family, 'mmmmmmmmmmlli', '72px');
+        container.appendChild(element);
+        sizes[family] = {
+          width: safeNumber(element.offsetWidth),
+          height: safeNumber(element.offsetHeight)
+        };
       }
+
+      return sizes;
+    } finally {
+      removeNode(container);
     }
   });
 }
@@ -94,6 +118,10 @@ function measureFonts(documentRef) {
     return null;
   }
 
+  return withMeasurementDocument(documentRef, (measurementDocument) => measureFontsInDocument(measurementDocument));
+}
+
+function measureFontsInDocument(documentRef) {
   const container = createContainer(documentRef);
   try {
     documentRef.body.appendChild(container);
@@ -114,6 +142,45 @@ function measureFonts(documentRef) {
     return available;
   } finally {
     removeNode(container);
+  }
+}
+
+function withMeasurementDocument(documentRef, callback) {
+  const frame = createMeasurementFrame(documentRef);
+  if (!frame) {
+    return callback(documentRef);
+  }
+
+  try {
+    documentRef.body.appendChild(frame);
+    const measurementDocument = frame.contentDocument || (frame.contentWindow && frame.contentWindow.document);
+    if (canMeasure(measurementDocument)) {
+      return callback(measurementDocument);
+    }
+
+    return callback(documentRef);
+  } finally {
+    removeNode(frame);
+  }
+}
+
+function createMeasurementFrame(documentRef) {
+  try {
+    const frame = documentRef.createElement('iframe');
+    if (!frame || !frame.style) {
+      return null;
+    }
+
+    frame.setAttribute && frame.setAttribute('aria-hidden', 'true');
+    frame.style.position = 'absolute';
+    frame.style.visibility = 'hidden';
+    frame.style.left = '-10000px';
+    frame.style.top = '-10000px';
+    frame.style.width = '0';
+    frame.style.height = '0';
+    return frame;
+  } catch (_error) {
+    return null;
   }
 }
 
