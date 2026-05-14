@@ -123,6 +123,20 @@ test('identify handles no components and fallback request ids', async () => {
   assert.match(result.requestId, /^req_/u);
 });
 
+test('confidence reports medium collection quality for partial collection', async () => {
+  const client = createClient({
+    collectors: [
+      createCollector({ id: 'quality.ok', collect: () => 'ok' }),
+      createCollector({ id: 'quality.error', collect: () => { throw new Error('quality_error'); } })
+    ]
+  });
+
+  const result = await client.identify({ consent: true });
+
+  assert.equal(result.confidence.collectionQuality.score, 0.5);
+  assert.equal(result.confidence.collectionQuality.level, 'medium');
+});
+
 test('identify uses crypto randomUUID when available', async () => {
   const client = createClient({
     namespace: 'uuid-suite',
@@ -355,6 +369,47 @@ test('localStorage adapter is used when available', async () => {
   } finally {
     restoreGlobalProperty('localStorage', previous);
   }
+});
+
+test('localStorage adapter is disabled when storage is unavailable', async () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: () => null } });
+
+  try {
+    const client = createClient({
+      namespace: 'local-storage-unavailable',
+      storage: 'local',
+      collectors: [createCollector({ id: 'local.storage.unavailable', collect: () => 'same' })]
+    });
+    const result = await client.identify({ consent: true });
+
+    assert.equal(result.meta.storage.enabled, false);
+    assert.equal(result.meta.storage.status, 'disabled');
+  } finally {
+    restoreGlobalProperty('localStorage', previous);
+  }
+});
+
+test('storage state tolerates legacy entries without seenCount', async () => {
+  let stored = null;
+  const storage = {
+    type: 'legacy-memory',
+    get: () => stored,
+    set: (_key, value) => { stored = value; }
+  };
+  const client = createClient({
+    namespace: 'legacy-storage',
+    storage,
+    collectors: [createCollector({ id: 'legacy.storage.signal', collect: () => 'same' })]
+  });
+
+  const first = await client.identify({ consent: true });
+  const state = JSON.parse(stored);
+  stored = JSON.stringify({ visitorId: first.visitorId, firstSeenAt: state.firstSeenAt });
+  const second = await client.identify({ consent: true });
+
+  assert.equal(second.meta.storage.status, 'updated');
+  assert.equal(second.meta.storage.seenCount, 1);
 });
 
 test('default namespace can come from location hostname', async () => {
