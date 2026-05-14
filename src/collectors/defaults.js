@@ -1,7 +1,11 @@
 import {
   createApplePayCollector,
+  createApiFeaturesCollector,
+  createCssFeaturesCollector,
   createDomBlockersCollector,
+  createNetworkConnectionCollector,
   createPdfViewerCollector,
+  createPerformanceMemoryCollector,
   createPluginsCollector,
   createPrivateClickMeasurementCollector,
   createVendorFlavorsCollector
@@ -9,7 +13,7 @@ import {
 import { createBotDetectionCollector } from './bot-detection.js';
 import { createMediaPreferencesCollector, createScreenCollector, createScreenFrameCollector } from './display.js';
 import { createFontPreferencesCollector, createFontsCollector } from './fonts.js';
-import { createCanvasCollector, createWebglCollector, createWebglExtensionsCollector } from './graphics.js';
+import { createCanvasCollector, createWebglCollector, createWebglExtensionsCollector, createWebglPrecisionCollector } from './graphics.js';
 import { createArchitectureCollector, createHardwareCollector, createTouchSupportCollector } from './hardware.js';
 import { createDateTimeLocaleCollector, createLocaleCollector, createTimezoneCollector } from './locale.js';
 import { createMathCollector } from './math.js';
@@ -36,6 +40,10 @@ export function createDefaultCollectors() {
     createStorageCapabilitiesCollector(),
     createBotDetectionCollector(),
     createPrivacyModeCollector(),
+    createApiFeaturesCollector(),
+    createCssFeaturesCollector(),
+    createNetworkConnectionCollector(),
+    createPerformanceMemoryCollector(),
     createPluginsCollector(),
     createVendorFlavorsCollector(),
     createPdfViewerCollector(),
@@ -49,6 +57,7 @@ export function createDefaultCollectors() {
     createAudioCollector(),
     createWebglCollector(),
     createWebglExtensionsCollector(),
+    createWebglPrecisionCollector(),
     createCanvasCollector()
   ];
 }

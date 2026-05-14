@@ -3,8 +3,8 @@ import { resolve } from 'node:path';
 
 const budgets = [
   {
-    file: 'dist/browser/fingerprint-framework.min.js',
-    maxBytes: 45000
+    file: 'dist/browser/fingerprintjs-botblocker.min.js',
+    maxBytes: 50000
   }
 ];
 

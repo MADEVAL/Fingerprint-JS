@@ -1,7 +1,7 @@
-import { componentsToDebugString, createBotDetectionCollector, createClient, createCollector, createPrivacyModeCollector, hashComponents, loadClient, type IdentifyResult } from '@fingerprint-framework/core';
-import { createBrowserCollectorPack, createDefaultCollectors, createNavigatorPropertiesCollector } from '@fingerprint-framework/core/collectors';
-import { createPolicy } from '@fingerprint-framework/core/policy';
-import { createMemoryStorage } from '@fingerprint-framework/core/storage';
+import { componentsToDebugString, createApiFeaturesCollector, createBotDetectionCollector, createClient, createCollector, createCssFeaturesCollector, createNetworkConnectionCollector, createPerformanceMemoryCollector, createPrivacyModeCollector, createWebglPrecisionCollector, hashComponents, loadClient, type IdentifyResult } from '@botblocker/fingerprintjs';
+import { createBrowserCollectorPack, createDefaultCollectors, createNavigatorPropertiesCollector } from '@botblocker/fingerprintjs/collectors';
+import { createPolicy } from '@botblocker/fingerprintjs/policy';
+import { createMemoryStorage } from '@botblocker/fingerprintjs/storage';
 
 const collector = createCollector({
   id: 'types.signal',
@@ -17,6 +17,11 @@ const collector = createCollector({
 const navigatorCollector = createNavigatorPropertiesCollector();
 const botCollector = createBotDetectionCollector();
 const privacyCollector = createPrivacyModeCollector();
+const apiCollector = createApiFeaturesCollector();
+const cssCollector = createCssFeaturesCollector();
+const networkCollector = createNetworkConnectionCollector();
+const memoryCollector = createPerformanceMemoryCollector();
+const precisionCollector = createWebglPrecisionCollector();
 
 const latencyCollector = createCollector({
   id: 'types.latency',
@@ -28,7 +33,7 @@ const latencyCollector = createCollector({
 
 const client = createClient({
   namespace: 'types',
-  collectors: [collector, navigatorCollector, botCollector, privacyCollector, latencyCollector, ...createBrowserCollectorPack(), ...createDefaultCollectors()],
+  collectors: [collector, navigatorCollector, botCollector, privacyCollector, apiCollector, cssCollector, networkCollector, memoryCollector, precisionCollector, latencyCollector, ...createBrowserCollectorPack(), ...createDefaultCollectors()],
   policy: { redactValues: true },
   storage: createMemoryStorage()
 });

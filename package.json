@@ -1,7 +1,8 @@
 {
-  "name": "@fingerprint-framework/core",
+  "name": "@botblocker/fingerprintjs",
   "version": "0.1.0",
-  "description": "Consent-aware browser signal and device intelligence framework with ESM and script-tag builds.",
+  "description": "FingerprintJS by BotBlocker: consent-aware browser fingerprinting, bot evidence, and device intelligence for BotBlocker Security integrations.",
+  "productName": "FingerprintJS by BotBlocker",
   "type": "module",
   "license": "MIT",
   "main": "./dist/index.mjs",
@@ -12,8 +13,8 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs"
     },
-    "./browser": "./dist/browser/fingerprint-framework.js",
-    "./browser.min": "./dist/browser/fingerprint-framework.min.js",
+    "./browser": "./dist/browser/fingerprintjs-botblocker.js",
+    "./browser.min": "./dist/browser/fingerprintjs-botblocker.min.js",
     "./collectors": {
       "types": "./dist/collectors.d.ts",
       "import": "./dist/collectors.mjs"
@@ -46,6 +47,9 @@
   },
   "keywords": [
     "fingerprint",
+    "botblocker",
+    "bot-detection",
+    "security",
     "browser",
     "device-intelligence",
     "signals",

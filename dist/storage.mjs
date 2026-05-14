@@ -1,4 +1,4 @@
-/* Fingerprint Framework v0.1.0 | MIT */
+/* FingerprintJS by BotBlocker v0.1.0 | MIT | https://botblocker.top */
 
 // src/storage.js
 function createMemoryStorage(initialState) {

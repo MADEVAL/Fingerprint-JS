@@ -8,12 +8,21 @@ test('standalone browser bundle identifies from the script-tag demo', async ({ p
   await page.goto(demoUrl);
   await page.getByRole('button', { name: 'Identify' }).click();
 
-  const output = page.locator('#output');
-  await expect(output).toContainText('"visitorId"');
+  const compactOutput = page.locator('#compact-output');
+  const fullOutput = page.locator('#full-output');
+  await expect(compactOutput).toContainText('"visitorId"');
+  await expect(fullOutput).toContainText('"components"');
 
-  const result = JSON.parse(await output.textContent());
-  expect(result.visitorId).toMatch(/^[a-f0-9]{16,64}$/);
-  expect(result.meta.profile).toBe('balanced');
-  expect(result.meta.blocked).toBe(false);
-  expect(result.components.length).toBeGreaterThan(0);
+  const compact = JSON.parse(await compactOutput.textContent());
+  const full = JSON.parse(await fullOutput.textContent());
+
+  expect(compact.product).toBe('FingerprintJS by BotBlocker');
+  expect(compact.identity.visitorId).toMatch(/^[a-f0-9]{16,64}$/);
+  expect(compact.identity.profile).toBe('extended');
+  expect(compact.capabilities.length).toBeGreaterThan(0);
+  expect(compact.calculations.componentTotals.total).toBe(compact.capabilities.length);
+  expect(full.result.meta.profile).toBe('extended');
+  expect(full.result.meta.blocked).toBe(false);
+  expect(full.components.length).toBe(compact.capabilities.length);
+  expect(full.calculations.hash.matches).toBe(true);
 });

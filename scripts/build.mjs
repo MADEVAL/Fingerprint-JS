@@ -4,9 +4,9 @@ import { build } from 'esbuild';
 
 const root = process.cwd();
 const distPath = resolve(root, 'dist');
-const browserPath = resolve(distPath, 'browser/fingerprint-framework.js');
-const minPath = resolve(distPath, 'browser/fingerprint-framework.min.js');
-const banner = '/* Fingerprint Framework v0.1.0 | MIT */';
+const browserPath = resolve(distPath, 'browser/fingerprintjs-botblocker.js');
+const minPath = resolve(distPath, 'browser/fingerprintjs-botblocker.min.js');
+const banner = '/* FingerprintJS by BotBlocker v0.1.0 | MIT | https://botblocker.top */';
 
 await rm(distPath, { recursive: true, force: true });
 await mkdir(dirname(browserPath), { recursive: true });
@@ -32,7 +32,7 @@ const browserBuildOptions = {
   entryPoints: [resolve(root, 'src/index.js')],
   bundle: true,
   format: 'iife',
-  globalName: 'FingerprintFramework',
+  globalName: 'FingerprintJSBotBlocker',
   platform: 'browser',
   target: 'es2020',
   external: ['node:crypto'],

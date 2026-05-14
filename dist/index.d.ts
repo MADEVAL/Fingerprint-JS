@@ -157,3 +157,8 @@ export function canonicalStringify(value: unknown): string;
 export function componentsToDebugString(components: ComponentResult[]): string;
 export function hashComponents(components: ComponentResult[], options?: HashComponentsOptions, context?: IdentifyContext): Promise<HashComponentsResult>;
 export function hashValue(value: unknown, runtime?: Partial<CollectorContext>): Promise<{ algorithm: string; value: string }>;
+export function createApiFeaturesCollector(): Collector;
+export function createCssFeaturesCollector(): Collector;
+export function createNetworkConnectionCollector(): Collector;
+export function createPerformanceMemoryCollector(): Collector;
+export function createWebglPrecisionCollector(): Collector;

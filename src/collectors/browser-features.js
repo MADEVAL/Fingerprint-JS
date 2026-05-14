@@ -1,5 +1,118 @@
 import { createCollector } from './core.js';
-import { getWindowRef, safeBoolean, safeString, toArrayLike } from './shared.js';
+import { getWindowRef, safeBoolean, safeNumber, safeString, toArrayLike } from './shared.js';
+
+const API_FEATURE_GROUPS = Object.freeze({
+  javascript: Object.freeze(['Promise', 'Symbol', 'Proxy', 'Reflect', 'Map', 'Set', 'WeakMap', 'WeakSet', 'BigInt', 'Atomics', 'SharedArrayBuffer', 'ArrayBuffer', 'WebAssembly']),
+  browser: Object.freeze(['fetch', 'WebSocket', 'Worker', 'IntersectionObserver', 'ResizeObserver', 'MutationObserver', 'requestIdleCallback', 'speechSynthesis', 'performance', 'Notification']),
+  storage: Object.freeze(['localStorage', 'sessionStorage', 'indexedDB', 'crypto']),
+  navigator: Object.freeze(['bluetooth', 'clipboard', 'credentials', 'geolocation', 'mediaDevices', 'serviceWorker', 'permissions'])
+});
+
+const CSS_FEATURES = Object.freeze([
+  ['webkitAppearance', '-webkit-appearance', 'none'],
+  ['mozAppearance', '-moz-appearance', 'none'],
+  ['accentColor', 'accent-color', 'auto'],
+  ['containerQueries', 'container-type', 'inline-size'],
+  ['oklchColor', 'color', 'oklch(0.5 0.2 240)'],
+  ['viewTransitions', 'view-transition-name', 'root'],
+  ['anchorPositioning', 'anchor-name', '--a']
+]);
+
+export function createApiFeaturesCollector() {
+  return createCollector({
+    id: 'browser.apiFeatures',
+    version: '1',
+    category: 'runtime',
+    sensitivity: 'low',
+    mode: 'passive',
+    stability: 'stable',
+    weight: 0.5,
+    collect(context) {
+      const windowRef = getWindowRef(context);
+      const navigatorRef = context.navigator || {};
+
+      return {
+        javascript: collectFeatureGroup(windowRef, API_FEATURE_GROUPS.javascript),
+        browser: collectFeatureGroup(windowRef, API_FEATURE_GROUPS.browser),
+        storage: collectFeatureGroup(windowRef, API_FEATURE_GROUPS.storage),
+        navigator: collectFeatureGroup(navigatorRef, API_FEATURE_GROUPS.navigator)
+      };
+    }
+  });
+}
+
+export function createCssFeaturesCollector() {
+  return createCollector({
+    id: 'browser.cssFeatures',
+    version: '1',
+    category: 'runtime',
+    sensitivity: 'low',
+    mode: 'passive',
+    stability: 'stable',
+    weight: 0.35,
+    collect(context) {
+      const windowRef = getWindowRef(context);
+      const cssRef = windowRef.CSS;
+      if (!cssRef || typeof cssRef.supports !== 'function') {
+        return null;
+      }
+
+      return Object.fromEntries(CSS_FEATURES.map(([key, property, value]) => [key, supportsCss(cssRef, property, value)]));
+    }
+  });
+}
+
+export function createNetworkConnectionCollector() {
+  return createCollector({
+    id: 'network.connection',
+    version: '1',
+    category: 'network',
+    sensitivity: 'medium',
+    mode: 'passive',
+    stability: 'volatile',
+    weight: 0.25,
+    collect(context) {
+      const navigatorRef = context.navigator || {};
+      const connection = navigatorRef.connection || navigatorRef.mozConnection || navigatorRef.webkitConnection;
+      if (!connection) {
+        return null;
+      }
+
+      return {
+        effectiveType: safeString(connection.effectiveType),
+        type: safeString(connection.type),
+        downlink: safeNumber(connection.downlink),
+        rtt: safeNumber(connection.rtt),
+        saveData: safeBoolean(connection.saveData)
+      };
+    }
+  });
+}
+
+export function createPerformanceMemoryCollector() {
+  return createCollector({
+    id: 'performance.memory',
+    version: '1',
+    category: 'runtime',
+    sensitivity: 'medium',
+    mode: 'passive',
+    stability: 'volatile',
+    weight: 0.25,
+    collect(context) {
+      const windowRef = getWindowRef(context);
+      const memory = windowRef.performance && windowRef.performance.memory;
+      if (!memory) {
+        return null;
+      }
+
+      return {
+        jsHeapSizeLimitMB: toMegabytes(memory.jsHeapSizeLimit),
+        totalJSHeapSizeMB: toMegabytes(memory.totalJSHeapSize),
+        usedJSHeapSizeMB: toMegabytes(memory.usedJSHeapSize)
+      };
+    }
+  });
+}
 
 const VENDOR_GLOBALS = Object.freeze([
   ['chrome', 'chrome'],
@@ -224,4 +337,29 @@ function isBlocked(element, windowRef) {
 
   const style = windowRef.getComputedStyle(element);
   return style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0';
+}
+
+function collectFeatureGroup(source, features) {
+  return Object.fromEntries(features.map((feature) => [feature, hasProperty(source, feature)]));
+}
+
+function hasProperty(source, feature) {
+  try {
+    return Boolean(feature in source);
+  } catch (_error) {
+    return false;
+  }
+}
+
+function supportsCss(cssRef, property, value) {
+  try {
+    return Boolean(cssRef.supports(property, value));
+  } catch (_error) {
+    return null;
+  }
+}
+
+function toMegabytes(value) {
+  const number = safeNumber(value);
+  return number === null ? null : Math.round(number / 1024 / 1024);
 }

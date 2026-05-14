@@ -1,4 +1,4 @@
-# Identifier Version Policy
+# Identifier Version Policy: FingerprintJS by BotBlocker
 
 The public JavaScript API follows semantic versioning. The exact set of built-in fingerprint components is allowed to change in minor versions because browsers change quickly and unstable signals sometimes need to be removed, suppressed, or normalized.
 

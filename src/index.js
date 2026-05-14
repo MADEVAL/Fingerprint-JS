@@ -1,6 +1,6 @@
 export { canonicalStringify } from './canonical.js';
 export { createClient } from './client.js';
-export { createBotDetectionCollector, createBrowserCollectorPack, createCollector, createDefaultCollectors, createPrivacyModeCollector } from './collectors/index.js';
+export { createApiFeaturesCollector, createBotDetectionCollector, createBrowserCollectorPack, createCollector, createCssFeaturesCollector, createDefaultCollectors, createNetworkConnectionCollector, createPerformanceMemoryCollector, createPrivacyModeCollector, createWebglPrecisionCollector } from './collectors/index.js';
 export { PROFILE_PRESETS, VERSION } from './constants.js';
 export { hashValue } from './crypto.js';
 export { componentsToDebugString } from './debug.js';

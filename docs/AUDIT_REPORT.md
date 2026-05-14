@@ -1,59 +1,71 @@
-# Implementation Audit Report
+# Repository Audit Report
 
 ## Scope
 
-This audit covers the current repository state: package metadata, source runtime, generated browser builds, examples, documentation, and automated tests.
+This audit covers FingerprintJS by BotBlocker source code, package metadata, generated browser builds, documentation, examples, tests, and CI configuration.
 
-## Verified Results
+## Verified Quality Gates
 
-- The package has no production dependencies.
-- The runtime exposes an ESM API and a script-tag global API.
-- The build uses esbuild and creates `dist/index.mjs`, subpath ESM builds, TypeScript declaration files, `dist/browser/fingerprint-framework.js`, and `dist/browser/fingerprint-framework.min.js`.
-- The Node test command uses the Node test runner, and browser tests use Playwright across Chromium, Firefox, and WebKit.
-- The coverage command enforces 100% line, branch, and function coverage for `src/**/*.js`.
-- There are no network calls in the runtime implementation.
-- CI is configured through GitHub Actions for Node LTS and current Node.
-- A 45 KB bundle size budget is enforced for `dist/browser/fingerprint-framework.min.js`.
-- Type declarations are validated by TypeScript through package-level imports.
+- Build pipeline uses esbuild for ESM and browser bundles.
+- Runtime has no production dependencies.
+- Runtime performs no network calls by default.
+- TypeScript declarations are validated through package-level imports.
+- Node tests enforce 100% line, branch, and function coverage for `src/**/*.js`.
+- Browser tests run against Chromium, Firefox, and WebKit through Playwright.
+- The minified browser bundle is checked against a 50 KB budget.
+- CI runs install, browser setup, and `npm run verify` on push and pull request.
 
-## Current Strengths
+## Current Feature Coverage
 
-- Privacy profiles are explicit and deny active high-sensitivity collectors by default.
-- Collector failures are isolated and reported as component metadata.
-- Hash input is canonicalized before hashing.
-- Storage is disabled by default and scoped by namespace when enabled.
-- The standalone browser build is smoke-tested through a restricted VM context.
-- Source files are split by responsibility while published builds remain bundled for package and script-tag usage.
-- Built-in collectors now cover substantially more browser entropy and risk evidence: client hints, navigator properties, bot detection, private-mode indicators, screen frame, media preferences, touch, architecture, storage capabilities, plugins, vendor flavors, PDF viewer, Apple Pay, Private Click Measurement, DOM blockers, fonts, audio latency, audio fingerprinting, WebGL extensions, canvas, and math behavior.
-- Known unstable browser paths are handled through a dedicated quirk layer before collecting audio, canvas, screen metrics, screen frame, and hardware concurrency signals.
-- `loadClient()`, `prepare()`, `get()`, `hashComponents()`, `client.debug()`, and `componentsToDebugString()` provide a more mature integration and diagnostics flow.
-- Collector preparation now preloads allowed sources, reuses prepared values, and respects consent requirements when configured.
-- Collection scheduling runs passive sources in parallel and active sources in declared order.
-- Font layout probing uses iframe isolation when available.
-- DOM blocker probing covers an expanded set of local bait categories.
+- Deterministic visitor identity with canonical hash payloads.
+- SHA-256 through Web Crypto or Node Crypto, plus deterministic fallback hashing.
+- Privacy profiles: `strict`, `balanced`, `extended`.
+- Consent gate and optional value redaction.
+- Collector allow/deny and category allow/deny policy controls.
+- Two-phase collector lifecycle with preparation and collection.
+- Passive collector parallelism and active collector ordering.
+- Storage state through browser localStorage or custom adapters.
+- Debug formatting through `client.debug()` and `componentsToDebugString()`.
+- Product-side ID recalculation through `hashComponents()`.
+- Script-tag global API through `FingerprintJSBotBlocker`.
+- Compact and full browser demo reports.
 
-## Implemented Improvements
+## Built-In Signal Coverage
 
-- Added `.github/workflows/ci.yml` with `npm ci`, Playwright browser installation, and `npm run verify`.
-- Added Playwright browser tests for Chromium, Firefox, and WebKit.
-- Replaced the local minifier with esbuild for bundling and minification.
-- Added TypeScript declaration validation through `npm run typecheck`.
-- Added a bundle size gate through `npm run check:size`.
-- Added subpath exports for `./collectors`, `./policy`, and `./storage`.
-- Split built-in collectors into domain modules under `src/collectors/`.
-- Added `src/browser-quirks.js` for conservative browser-specific stabilization decisions.
-- Added a collector preparation lifecycle with active-source ordering.
-- Added public `hashComponents()` for product-side component filtering and ID recalculation.
-- Added navigator property and audio base latency collectors.
-- Added `browser.botDetection` with scored automation evidence.
-- Added `browser.privacyMode` with conservative private-mode likelihood indicators.
-- Added iframe-isolated font measurement and expanded DOM blocker baits.
-- Added `docs/VERSION_POLICY.md` for visitor identifier compatibility expectations.
-- Raised the bundle size budget from 30 KB to 45 KB after expanding the built-in collector pack.
+- Runtime and client hints.
+- Navigator properties.
+- API feature support and CSS feature support.
+- Performance memory diagnostics.
+- Bot and automation evidence.
+- Private-mode indicators.
+- Locale, date-time locale, and timezone.
+- Screen metrics, screen frame, and media preferences.
+- Hardware, touch, and architecture.
+- Storage capabilities.
+- Plugins, vendor flavors, PDF viewer, Apple Pay, and Private Click Measurement.
+- Network connection diagnostics.
+- DOM blocker bait checks.
+- Font availability and preferences.
+- Audio base latency and audio fingerprinting.
+- WebGL renderer, extensions, and shader precision.
+- Canvas checksum.
+- JavaScript math behavior.
+
+## Browser Stabilization
+
+- Dedicated browser quirk detection layer.
+- Safari, Firefox, Firefox iOS, iOS desktop mode, Chromium, and Samsung Internet handling.
+- Suppression or normalization for known unstable audio, canvas, screen, and hardware paths.
+- Conservative private-mode reporting instead of unsupported universal incognito claims.
+- Weak bot evidence is separated from strong automation evidence to reduce false-positive risk.
+
+## BotBlocker Security Fit
+
+FingerprintJS by BotBlocker is suitable as a client-side signal layer for [BotBlocker Security](https://botblocker.top). The generated report can be forwarded to a backend or BotBlocker Security workflow for risk scoring, bot defense, fraud prevention, and session integrity checks.
 
 ## Remaining Practical Work
 
-1. Keep the 45 KB bundle budget under review as collectors are added.
-2. Add release automation only when publishing credentials and release policy are defined.
-3. Expand real-browser tests with product-specific integration fixtures when those flows exist.
-4. Calibrate bot and private-mode scoring against production traffic before using verdicts for automated enforcement.
+1. Calibrate bot and private-mode scoring against real product traffic before automated enforcement.
+2. Keep the 50 KB bundle budget under review as additional risk signals are added.
+3. Add release automation when publishing credentials and release policy are defined.
+4. Expand browser stability fixtures for product-specific flows and target browser versions.

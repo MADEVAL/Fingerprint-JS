@@ -21,7 +21,7 @@ export function normalizeClientOptions(options) {
       : DEFAULT_COLLECTOR_TIMEOUT_MS,
     loadDelayMs: Number.isFinite(options.loadDelayMs) ? Math.max(0, Number(options.loadDelayMs)) : DEFAULT_LOAD_DELAY_MS,
     storage,
-    storageKey: `fingerprint-framework:${namespace}:state`,
+    storageKey: `fingerprintjs-botblocker:${namespace}:state`,
     consent: options.consent || null,
     now: typeof options.now === 'function' ? options.now : Date.now
   });

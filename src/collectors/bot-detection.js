@@ -44,14 +44,22 @@ export function createBotDetectionCollector() {
       const plugins = navigatorRef ? toArrayLike(navigatorRef.plugins) : [];
       const mimeTypes = navigatorRef ? toArrayLike(navigatorRef.mimeTypes) : [];
       const languages = normalizeLanguages(navigatorRef && navigatorRef.languages);
+      const language = safeString(navigatorRef && navigatorRef.language) || '';
       const automationGlobals = AUTOMATION_GLOBALS.filter((property) => property in windowRef).sort();
+      const languageIssues = detectLanguageIssues(language, languages);
+      const hardwareIssues = detectHardwareIssues(navigatorRef || {});
       const checks = [
         createCheck('navigator.webdriver', navigatorRef && navigatorRef.webdriver === true, 0.45, null),
         createCheck('automation.globals', automationGlobals.length > 0, 0.35, automationGlobals),
         createCheck('headless.userAgent', HEADLESS_UA_PATTERN.test(userAgent), 0.3, userAgent || null),
-        createCheck('empty.languages', Boolean(navigatorRef && safeString(navigatorRef.language) && languages.length === 0), 0.1, null),
+        createCheck('empty.languages', Boolean(navigatorRef && language && languages.length === 0), 0.1, null),
+        createCheck('language.mismatch', languageIssues.length > 0, 0.08, languageIssues),
+        createCheck('impossible.hardware', hardwareIssues.length > 0, 0.08, hardwareIssues),
         createCheck('zero.outer.window', hasZeroOuterWindow(windowRef), 0.12, readWindowSize(windowRef)),
-        createCheck('empty.chrome.plugins', isChromeLike(userAgent) && plugins.length === 0 && mimeTypes.length === 0, 0.08, null)
+        createCheck('empty.chrome.plugins', isChromeLike(userAgent) && plugins.length === 0 && mimeTypes.length === 0, 0.08, null),
+        createCheck('plugin.inconsistency', hasPluginInconsistency(plugins, mimeTypes), 0.08, summarizePlugins(plugins, mimeTypes)),
+        createCheck('permissions.queryPatched', hasPatchedPermissionsQuery(navigatorRef), 0.08, null),
+        createCheck('empty.chrome.global', isChromeLike(userAgent) && isEmptyChromeGlobal(windowRef), 0.06, null)
       ];
 
       const score = roundScore(checks.reduce((total, check) => total + (check.matched ? check.weight : 0), 0));
@@ -109,4 +117,66 @@ function isChromeLike(userAgent) {
 
 function roundScore(value) {
   return Math.round(Math.min(1, value) * 1000) / 1000;
+}
+
+function detectLanguageIssues(language, languages) {
+  const issues = [];
+  if (language && !/^[a-zA-Z0-9_-]{2,35}$/u.test(language)) {
+    issues.push('invalid_language');
+  }
+
+  if (language && languages.length > 0 && languages[0] !== language) {
+    issues.push('primary_language_mismatch');
+  }
+
+  if (new Set(languages).size !== languages.length) {
+    issues.push('duplicate_languages');
+  }
+
+  return issues;
+}
+
+function detectHardwareIssues(navigatorRef) {
+  const issues = [];
+  const concurrency = safeNumber(navigatorRef.hardwareConcurrency);
+  const memory = safeNumber(navigatorRef.deviceMemory);
+  if (concurrency !== null && (concurrency === 0 || concurrency > 128)) {
+    issues.push('hardware_concurrency_range');
+  }
+
+  if (memory !== null && (memory < 0.25 || memory > 128)) {
+    issues.push('device_memory_range');
+  }
+
+  return issues;
+}
+
+function hasPluginInconsistency(plugins, mimeTypes) {
+  if (plugins.length > 0 && mimeTypes.length === 0) {
+    return true;
+  }
+
+  const pdfPlugins = plugins.filter((plugin) => /PDF|Acrobat/u.test(safeString(plugin.name) || '')).length;
+  return pdfPlugins > 2 || plugins.some((plugin) => Number.isFinite(plugin.length) && Number(plugin.length) > 0 && !plugin[0]);
+}
+
+function summarizePlugins(plugins, mimeTypes) {
+  return { pluginCount: plugins.length, mimeTypeCount: mimeTypes.length };
+}
+
+function hasPatchedPermissionsQuery(navigatorRef) {
+  const query = navigatorRef && navigatorRef.permissions && navigatorRef.permissions.query;
+  if (typeof query !== 'function') {
+    return false;
+  }
+
+  try {
+    return !/\[native code\]/u.test(Function.prototype.toString.call(query));
+  } catch (_error) {
+    return false;
+  }
+}
+
+function isEmptyChromeGlobal(windowRef) {
+  return Boolean(windowRef.chrome && typeof windowRef.chrome === 'object' && Object.keys(windowRef.chrome).length === 0);
 }

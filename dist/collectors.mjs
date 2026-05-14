@@ -1,4 +1,4 @@
-/* Fingerprint Framework v0.1.0 | MIT */
+/* FingerprintJS by BotBlocker v0.1.0 | MIT | https://botblocker.top */
 
 // src/constants.js
 var SENSITIVITY_RANK = Object.freeze({ low: 1, medium: 2, high: 3 });
@@ -135,14 +135,22 @@ function createBotDetectionCollector() {
       const plugins = navigatorRef ? toArrayLike(navigatorRef.plugins) : [];
       const mimeTypes = navigatorRef ? toArrayLike(navigatorRef.mimeTypes) : [];
       const languages = normalizeLanguages(navigatorRef && navigatorRef.languages);
+      const language = safeString(navigatorRef && navigatorRef.language) || "";
       const automationGlobals = AUTOMATION_GLOBALS.filter((property) => property in windowRef).sort();
+      const languageIssues = detectLanguageIssues(language, languages);
+      const hardwareIssues = detectHardwareIssues(navigatorRef || {});
       const checks = [
         createCheck("navigator.webdriver", navigatorRef && navigatorRef.webdriver === true, 0.45, null),
         createCheck("automation.globals", automationGlobals.length > 0, 0.35, automationGlobals),
         createCheck("headless.userAgent", HEADLESS_UA_PATTERN.test(userAgent), 0.3, userAgent || null),
-        createCheck("empty.languages", Boolean(navigatorRef && safeString(navigatorRef.language) && languages.length === 0), 0.1, null),
+        createCheck("empty.languages", Boolean(navigatorRef && language && languages.length === 0), 0.1, null),
+        createCheck("language.mismatch", languageIssues.length > 0, 0.08, languageIssues),
+        createCheck("impossible.hardware", hardwareIssues.length > 0, 0.08, hardwareIssues),
         createCheck("zero.outer.window", hasZeroOuterWindow(windowRef), 0.12, readWindowSize(windowRef)),
-        createCheck("empty.chrome.plugins", isChromeLike(userAgent) && plugins.length === 0 && mimeTypes.length === 0, 0.08, null)
+        createCheck("empty.chrome.plugins", isChromeLike(userAgent) && plugins.length === 0 && mimeTypes.length === 0, 0.08, null),
+        createCheck("plugin.inconsistency", hasPluginInconsistency(plugins, mimeTypes), 0.08, summarizePlugins(plugins, mimeTypes)),
+        createCheck("permissions.queryPatched", hasPatchedPermissionsQuery(navigatorRef), 0.08, null),
+        createCheck("empty.chrome.global", isChromeLike(userAgent) && isEmptyChromeGlobal(windowRef), 0.06, null)
       ];
       const score = roundScore(checks.reduce((total, check) => total + (check.matched ? check.weight : 0), 0));
       const evidence = checks.filter((check) => check.matched).map((check) => check.name);
@@ -192,8 +200,160 @@ function isChromeLike(userAgent) {
 function roundScore(value) {
   return Math.round(Math.min(1, value) * 1e3) / 1e3;
 }
+function detectLanguageIssues(language, languages) {
+  const issues = [];
+  if (language && !/^[a-zA-Z0-9_-]{2,35}$/u.test(language)) {
+    issues.push("invalid_language");
+  }
+  if (language && languages.length > 0 && languages[0] !== language) {
+    issues.push("primary_language_mismatch");
+  }
+  if (new Set(languages).size !== languages.length) {
+    issues.push("duplicate_languages");
+  }
+  return issues;
+}
+function detectHardwareIssues(navigatorRef) {
+  const issues = [];
+  const concurrency = safeNumber(navigatorRef.hardwareConcurrency);
+  const memory = safeNumber(navigatorRef.deviceMemory);
+  if (concurrency !== null && (concurrency === 0 || concurrency > 128)) {
+    issues.push("hardware_concurrency_range");
+  }
+  if (memory !== null && (memory < 0.25 || memory > 128)) {
+    issues.push("device_memory_range");
+  }
+  return issues;
+}
+function hasPluginInconsistency(plugins, mimeTypes) {
+  if (plugins.length > 0 && mimeTypes.length === 0) {
+    return true;
+  }
+  const pdfPlugins = plugins.filter((plugin) => /PDF|Acrobat/u.test(safeString(plugin.name) || "")).length;
+  return pdfPlugins > 2 || plugins.some((plugin) => Number.isFinite(plugin.length) && Number(plugin.length) > 0 && !plugin[0]);
+}
+function summarizePlugins(plugins, mimeTypes) {
+  return { pluginCount: plugins.length, mimeTypeCount: mimeTypes.length };
+}
+function hasPatchedPermissionsQuery(navigatorRef) {
+  const query = navigatorRef && navigatorRef.permissions && navigatorRef.permissions.query;
+  if (typeof query !== "function") {
+    return false;
+  }
+  try {
+    return !/\[native code\]/u.test(Function.prototype.toString.call(query));
+  } catch (_error) {
+    return false;
+  }
+}
+function isEmptyChromeGlobal(windowRef) {
+  return Boolean(windowRef.chrome && typeof windowRef.chrome === "object" && Object.keys(windowRef.chrome).length === 0);
+}
 
 // src/collectors/browser-features.js
+var API_FEATURE_GROUPS = Object.freeze({
+  javascript: Object.freeze(["Promise", "Symbol", "Proxy", "Reflect", "Map", "Set", "WeakMap", "WeakSet", "BigInt", "Atomics", "SharedArrayBuffer", "ArrayBuffer", "WebAssembly"]),
+  browser: Object.freeze(["fetch", "WebSocket", "Worker", "IntersectionObserver", "ResizeObserver", "MutationObserver", "requestIdleCallback", "speechSynthesis", "performance", "Notification"]),
+  storage: Object.freeze(["localStorage", "sessionStorage", "indexedDB", "crypto"]),
+  navigator: Object.freeze(["bluetooth", "clipboard", "credentials", "geolocation", "mediaDevices", "serviceWorker", "permissions"])
+});
+var CSS_FEATURES = Object.freeze([
+  ["webkitAppearance", "-webkit-appearance", "none"],
+  ["mozAppearance", "-moz-appearance", "none"],
+  ["accentColor", "accent-color", "auto"],
+  ["containerQueries", "container-type", "inline-size"],
+  ["oklchColor", "color", "oklch(0.5 0.2 240)"],
+  ["viewTransitions", "view-transition-name", "root"],
+  ["anchorPositioning", "anchor-name", "--a"]
+]);
+function createApiFeaturesCollector() {
+  return createCollector({
+    id: "browser.apiFeatures",
+    version: "1",
+    category: "runtime",
+    sensitivity: "low",
+    mode: "passive",
+    stability: "stable",
+    weight: 0.5,
+    collect(context) {
+      const windowRef = getWindowRef(context);
+      const navigatorRef = context.navigator || {};
+      return {
+        javascript: collectFeatureGroup(windowRef, API_FEATURE_GROUPS.javascript),
+        browser: collectFeatureGroup(windowRef, API_FEATURE_GROUPS.browser),
+        storage: collectFeatureGroup(windowRef, API_FEATURE_GROUPS.storage),
+        navigator: collectFeatureGroup(navigatorRef, API_FEATURE_GROUPS.navigator)
+      };
+    }
+  });
+}
+function createCssFeaturesCollector() {
+  return createCollector({
+    id: "browser.cssFeatures",
+    version: "1",
+    category: "runtime",
+    sensitivity: "low",
+    mode: "passive",
+    stability: "stable",
+    weight: 0.35,
+    collect(context) {
+      const windowRef = getWindowRef(context);
+      const cssRef = windowRef.CSS;
+      if (!cssRef || typeof cssRef.supports !== "function") {
+        return null;
+      }
+      return Object.fromEntries(CSS_FEATURES.map(([key, property, value]) => [key, supportsCss(cssRef, property, value)]));
+    }
+  });
+}
+function createNetworkConnectionCollector() {
+  return createCollector({
+    id: "network.connection",
+    version: "1",
+    category: "network",
+    sensitivity: "medium",
+    mode: "passive",
+    stability: "volatile",
+    weight: 0.25,
+    collect(context) {
+      const navigatorRef = context.navigator || {};
+      const connection = navigatorRef.connection || navigatorRef.mozConnection || navigatorRef.webkitConnection;
+      if (!connection) {
+        return null;
+      }
+      return {
+        effectiveType: safeString(connection.effectiveType),
+        type: safeString(connection.type),
+        downlink: safeNumber(connection.downlink),
+        rtt: safeNumber(connection.rtt),
+        saveData: safeBoolean(connection.saveData)
+      };
+    }
+  });
+}
+function createPerformanceMemoryCollector() {
+  return createCollector({
+    id: "performance.memory",
+    version: "1",
+    category: "runtime",
+    sensitivity: "medium",
+    mode: "passive",
+    stability: "volatile",
+    weight: 0.25,
+    collect(context) {
+      const windowRef = getWindowRef(context);
+      const memory = windowRef.performance && windowRef.performance.memory;
+      if (!memory) {
+        return null;
+      }
+      return {
+        jsHeapSizeLimitMB: toMegabytes(memory.jsHeapSizeLimit),
+        totalJSHeapSizeMB: toMegabytes(memory.totalJSHeapSize),
+        usedJSHeapSizeMB: toMegabytes(memory.usedJSHeapSize)
+      };
+    }
+  });
+}
 var VENDOR_GLOBALS = Object.freeze([
   ["chrome", "chrome"],
   ["safari", "safari"],
@@ -389,6 +549,27 @@ function isBlocked(element, windowRef) {
   const style = windowRef.getComputedStyle(element);
   return style.display === "none" || style.visibility === "hidden" || style.opacity === "0";
 }
+function collectFeatureGroup(source, features) {
+  return Object.fromEntries(features.map((feature) => [feature, hasProperty(source, feature)]));
+}
+function hasProperty(source, feature) {
+  try {
+    return Boolean(feature in source);
+  } catch (_error) {
+    return false;
+  }
+}
+function supportsCss(cssRef, property, value) {
+  try {
+    return Boolean(cssRef.supports(property, value));
+  } catch (_error) {
+    return null;
+  }
+}
+function toMegabytes(value) {
+  const number = safeNumber(value);
+  return number === null ? null : Math.round(number / 1024 / 1024);
+}
 
 // src/browser-quirks.js
 function detectBrowserQuirks(context = {}) {
@@ -407,9 +588,9 @@ function detectBrowserQuirks(context = {}) {
   const chromeMatch = /(?:Chrome|Chromium|CriOS)\/(\d+)/u.exec(userAgent);
   const chromiumFromBrand = brandNames.some((name) => /Chromium|Google Chrome|Microsoft Edge/u.test(name));
   const chromiumFromUa = /Chrome\/|Chromium\/|CriOS\/|Edg\//u.test(userAgent);
-  const geckoFeature = "mozInnerScreenX" in windowRef || supportsCss(windowRef, "-moz-appearance", "none");
+  const geckoFeature = "mozInnerScreenX" in windowRef || supportsCss2(windowRef, "-moz-appearance", "none");
   const chromiumFeature = Boolean(windowRef.chrome && (windowRef.chrome.runtime || windowRef.chrome.loadTimes || windowRef.chrome.csi));
-  const webKitFeature = "WebKitCSSMatrix" in windowRef || "webkitRequestAnimationFrame" in windowRef || supportsCss(windowRef, "-webkit-touch-callout", "none") || Boolean(windowRef.safari);
+  const webKitFeature = "WebKitCSSMatrix" in windowRef || "webkitRequestAnimationFrame" in windowRef || supportsCss2(windowRef, "-webkit-touch-callout", "none") || Boolean(windowRef.safari);
   const isFirefox = Boolean(firefoxMatch || geckoFeature) && !/Seamonkey\//u.test(userAgent);
   const isChromium = (chromiumFromBrand || chromiumFromUa || chromiumFeature) && !isFirefox;
   const isSafari = /Safari\//u.test(userAgent) && !isChromium && !/FxiOS\/|OPR\/|SamsungBrowser\//u.test(userAgent);
@@ -507,7 +688,7 @@ function normalizeBrandNames(brands) {
 function safeNumber2(value) {
   return Number.isFinite(value) ? Number(value) : null;
 }
-function supportsCss(windowRef, property, value) {
+function supportsCss2(windowRef, property, value) {
   try {
     return Boolean(windowRef.CSS && typeof windowRef.CSS.supports === "function" && windowRef.CSS.supports(property, value));
   } catch (_error) {
@@ -1021,7 +1202,7 @@ function renderText(canvas, canvasContext) {
   canvasContext.fillStyle = "#f60";
   canvasContext.fillRect(100, 1, 62, 20);
   canvasContext.fillStyle = "#069";
-  canvasContext.fillText("Fingerprint Framework 0.1", 2, 18);
+  canvasContext.fillText("FingerprintJS by BotBlocker 0.1", 2, 18);
   canvasContext.fillStyle = "rgba(102, 204, 0, 0.65)";
   canvasContext.fillText("mwmw 12345", 4, 48);
   return summarizeCanvas(canvas);
@@ -1043,6 +1224,41 @@ function summarizeCanvas(canvas) {
       status: "unstable",
       reason: error && error.message ? String(error.message) : "canvas_read_failed"
     };
+  }
+}
+function createWebglPrecisionCollector() {
+  return createCollector({
+    id: "webgl.precision",
+    version: "1",
+    category: "graphics",
+    sensitivity: "high",
+    mode: "active",
+    stability: "stable",
+    weight: 0.65,
+    collect(context) {
+      const gl = getWebglContext(context);
+      if (!gl || typeof gl.getShaderPrecisionFormat !== "function") {
+        return null;
+      }
+      return {
+        vertexHighFloat: readShaderPrecision(gl, gl.VERTEX_SHADER, gl.HIGH_FLOAT),
+        fragmentHighFloat: readShaderPrecision(gl, gl.FRAGMENT_SHADER, gl.HIGH_FLOAT),
+        vertexMediumFloat: readShaderPrecision(gl, gl.VERTEX_SHADER, gl.MEDIUM_FLOAT),
+        fragmentMediumFloat: readShaderPrecision(gl, gl.FRAGMENT_SHADER, gl.MEDIUM_FLOAT)
+      };
+    }
+  });
+}
+function readShaderPrecision(gl, shaderType, precisionType) {
+  try {
+    const format = gl.getShaderPrecisionFormat(shaderType, precisionType);
+    return format ? {
+      precision: safeNumber(format.precision),
+      rangeMin: safeNumber(format.rangeMin),
+      rangeMax: safeNumber(format.rangeMax)
+    } : null;
+  } catch (_error) {
+    return null;
   }
 }
 
@@ -1703,6 +1919,10 @@ function createDefaultCollectors() {
     createStorageCapabilitiesCollector(),
     createBotDetectionCollector(),
     createPrivacyModeCollector(),
+    createApiFeaturesCollector(),
+    createCssFeaturesCollector(),
+    createNetworkConnectionCollector(),
+    createPerformanceMemoryCollector(),
     createPluginsCollector(),
     createVendorFlavorsCollector(),
     createPdfViewerCollector(),
@@ -1716,6 +1936,7 @@ function createDefaultCollectors() {
     createAudioCollector(),
     createWebglCollector(),
     createWebglExtensionsCollector(),
+    createWebglPrecisionCollector(),
     createCanvasCollector()
   ];
 }
@@ -1723,10 +1944,15 @@ function createBrowserCollectorPack() {
   return createDefaultCollectors().filter((collector) => collector.id !== "runtime.node");
 }
 export {
+  createApiFeaturesCollector,
   createBotDetectionCollector,
   createBrowserCollectorPack,
   createCollector,
+  createCssFeaturesCollector,
   createDefaultCollectors,
   createNavigatorPropertiesCollector,
-  createPrivacyModeCollector
+  createNetworkConnectionCollector,
+  createPerformanceMemoryCollector,
+  createPrivacyModeCollector,
+  createWebglPrecisionCollector
 };

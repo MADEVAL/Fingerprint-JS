@@ -3,67 +3,543 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Fingerprint Framework Demo</title>
+    <title>FingerprintJS by BotBlocker Demo</title>
     <style>
+      :root {
+        color-scheme: light;
+        --bg: #f5f7f8;
+        --panel: #ffffff;
+        --ink: #172026;
+        --muted: #5b6872;
+        --line: #d8e0e5;
+        --brand: #0f766e;
+        --brand-dark: #0b4f4a;
+        --accent: #2563eb;
+        --warn: #a16207;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
       body {
         margin: 0;
         min-height: 100vh;
-        font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        background: #f7f7f3;
-        color: #1f2933;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--ink);
       }
 
       main {
-        width: min(920px, calc(100% - 32px));
+        width: min(1280px, calc(100% - 32px));
         margin: 0 auto;
-        padding: 48px 0;
+        padding: 28px 0 36px;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding-bottom: 18px;
+      }
+
+      h1,
+      h2 {
+        margin: 0;
+        letter-spacing: 0;
+      }
+
+      h1 {
+        font-size: 28px;
+        line-height: 1.15;
+      }
+
+      h2 {
+        font-size: 15px;
+      }
+
+      .brand-link {
+        display: inline-flex;
+        min-height: 36px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        padding: 0 12px;
+        background: var(--brand);
+        color: #fff;
+        font-weight: 700;
+        text-decoration: none;
+        white-space: nowrap;
+      }
+
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+        padding: 12px 0;
+      }
+
+      label {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 650;
+      }
+
+      select,
+      button {
+        min-height: 38px;
+        border-radius: 6px;
+        font: inherit;
+      }
+
+      select {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--ink);
+        padding: 0 10px;
       }
 
       button {
-        min-height: 40px;
         border: 0;
-        border-radius: 6px;
         padding: 0 16px;
-        background: #115e59;
-        color: white;
-        font-weight: 700;
+        background: var(--brand-dark);
+        color: #fff;
+        font-weight: 750;
         cursor: pointer;
+      }
+
+      button:disabled {
+        cursor: progress;
+        opacity: 0.7;
+      }
+
+      .status {
+        color: var(--muted);
+        font-size: 14px;
+        margin-left: auto;
+      }
+
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin: 16px 0;
+      }
+
+      .metric {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        padding: 12px;
+      }
+
+      .metric span {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      .metric strong {
+        display: block;
+        overflow-wrap: anywhere;
+        padding-top: 6px;
+        font-size: 16px;
+      }
+
+      .reports {
+        display: grid;
+        grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+        gap: 14px;
+      }
+
+      section {
+        min-width: 0;
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 8px;
+      }
+
+      .panel-head span {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
       }
 
       pre {
         overflow: auto;
-        min-height: 220px;
-        margin-top: 20px;
-        padding: 16px;
-        border: 1px solid #d8ded8;
+        min-height: 520px;
+        max-height: 72vh;
+        margin: 0;
+        border: 1px solid var(--line);
         border-radius: 8px;
-        background: white;
+        background: var(--panel);
+        padding: 14px;
+        color: #111827;
+        font: 12px/1.5 "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+
+      .risk-bot {
+        color: #991b1b;
+      }
+
+      .risk-ok {
+        color: var(--brand-dark);
+      }
+
+      .risk-warn {
+        color: var(--warn);
+      }
+
+      @media (max-width: 900px) {
+        header,
+        .toolbar {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .status {
+          margin-left: 0;
+        }
+
+        .summary-grid,
+        .reports {
+          grid-template-columns: 1fr;
+        }
       }
     </style>
   </head>
   <body>
     <main>
-      <h1>Fingerprint Framework</h1>
-      <button type="button" id="identify">Identify</button>
-      <pre id="output">Ready</pre>
+      <header>
+        <h1>FingerprintJS by BotBlocker</h1>
+        <a class="brand-link" href="https://botblocker.top" rel="noopener noreferrer" target="_blank">BotBlocker Security</a>
+      </header>
+
+      <div class="toolbar">
+        <label for="profile">Profile
+          <select id="profile">
+            <option value="strict">strict</option>
+            <option value="balanced">balanced</option>
+            <option value="extended" selected>extended</option>
+          </select>
+        </label>
+        <button type="button" id="identify">Identify</button>
+        <span class="status" id="status">Ready</span>
+      </div>
+
+      <div class="summary-grid" aria-live="polite">
+        <div class="metric"><span>Visitor</span><strong id="metric-visitor">pending</strong></div>
+        <div class="metric"><span>Bot</span><strong id="metric-bot">pending</strong></div>
+        <div class="metric"><span>Private Mode</span><strong id="metric-privacy">pending</strong></div>
+        <div class="metric"><span>Confidence</span><strong id="metric-confidence">pending</strong></div>
+      </div>
+
+      <div class="reports">
+        <section>
+          <div class="panel-head"><h2>Compact report</h2><span>summary plus every capability</span></div>
+          <pre id="compact-output">Ready</pre>
+        </section>
+        <section>
+          <div class="panel-head"><h2>Full report</h2><span>raw result plus calculations</span></div>
+          <pre id="full-output">Ready</pre>
+        </section>
+      </div>
     </main>
 
-    <script src="../dist/browser/fingerprint-framework.js"></script>
+    <script src="../dist/browser/fingerprintjs-botblocker.js"></script>
     <script>
-      const output = document.querySelector('#output');
-      const client = FingerprintFramework.createClient({
-        namespace: location.hostname || 'browser-demo',
-        profile: 'balanced',
-        policy: { redactValues: true }
+      const namespace = location.hostname || 'botblocker-demo';
+      const consent = { granted: true, purpose: 'security-demo' };
+      const state = { client: null, profile: null };
+      const profileInput = document.querySelector('#profile');
+      const identifyButton = document.querySelector('#identify');
+      const statusOutput = document.querySelector('#status');
+      const compactOutput = document.querySelector('#compact-output');
+      const fullOutput = document.querySelector('#full-output');
+      const metrics = {
+        visitor: document.querySelector('#metric-visitor'),
+        bot: document.querySelector('#metric-bot'),
+        privacy: document.querySelector('#metric-privacy'),
+        confidence: document.querySelector('#metric-confidence')
+      };
+
+      identifyButton.addEventListener('click', () => {
+        runIdentity().catch((error) => {
+          statusOutput.textContent = 'Error';
+          compactOutput.textContent = JSON.stringify({ error: normalizeError(error) }, null, 2);
+          fullOutput.textContent = compactOutput.textContent;
+          identifyButton.disabled = false;
+        });
       });
 
-      client.prepare();
+      async function runIdentity() {
+        identifyButton.disabled = true;
+        statusOutput.textContent = 'Collecting';
 
-      document.querySelector('#identify').addEventListener('click', async () => {
-        output.textContent = 'Collecting...';
-        const result = await client.get({ consent: { granted: true, purpose: 'demo' } });
-        output.textContent = JSON.stringify(result, null, 2);
-      });
+        const profile = profileInput.value;
+        const client = await getClient(profile);
+        const result = await client.get({ consent });
+        const recalculated = await FingerprintJSBotBlocker.hashComponents(result.components, { namespace });
+        const calculations = buildCalculations(result, recalculated);
+        const compact = buildCompactReport(result, recalculated, calculations);
+        const full = buildFullReport(result, recalculated, calculations);
+
+        renderMetrics(compact);
+        compactOutput.textContent = JSON.stringify(compact, null, 2);
+        fullOutput.textContent = JSON.stringify(full, null, 2);
+        statusOutput.textContent = `Done in ${result.meta.durationMs} ms`;
+        identifyButton.disabled = false;
+      }
+
+      async function getClient(profile) {
+        if (state.client && state.profile === profile) {
+          return state.client;
+        }
+
+        state.profile = profile;
+        state.client = FingerprintJSBotBlocker.createClient({
+          namespace,
+          profile,
+          storage: 'local',
+          collectorTimeoutMs: 1200
+        });
+        await state.client.prepare({ consent });
+        return state.client;
+      }
+
+      function buildCompactReport(result, recalculated, calculations) {
+        const bot = componentValue(result, 'browser.botDetection');
+        const privacy = componentValue(result, 'browser.privacyMode');
+
+        return {
+          product: 'FingerprintJS by BotBlocker',
+          botBlockerSecurity: 'https://botblocker.top',
+          identity: {
+            visitorId: result.visitorId,
+            requestId: result.requestId,
+            namespace: result.namespace,
+            profile: result.meta.profile,
+            createdAt: result.createdAt
+          },
+          risk: {
+            bot: pickRisk(bot),
+            privateMode: pickRisk(privacy)
+          },
+          quality: result.confidence,
+          hash: {
+            algorithm: result.meta.hashAlgorithm,
+            recalculatedVisitorId: recalculated.visitorId,
+            recalculatedAlgorithm: recalculated.hashAlgorithm,
+            matchesResult: recalculated.visitorId === result.visitorId
+          },
+          calculations,
+          capabilities: result.components.map(toCompactCapability)
+        };
+      }
+
+      function buildFullReport(result, recalculated, calculations) {
+        return {
+          product: 'FingerprintJS by BotBlocker',
+          generatedAt: new Date().toISOString(),
+          botBlockerSecurity: 'https://botblocker.top',
+          compactMeaning: {
+            visitorId: 'Deterministic identifier derived from ok components.',
+            confidence: 'Collected weight divided by possible allowed weight.',
+            entropy: 'Weighted usefulness estimate based on component sensitivity.',
+            botDetection: 'Evidence score, not a standalone enforcement decision.',
+            privacyMode: 'Likelihood indicators, not a universal incognito flag.'
+          },
+          recalculatedHash: recalculated,
+          calculations,
+          result,
+          components: result.components.map((component) => ({
+            id: component.id,
+            version: component.version,
+            category: component.category,
+            sensitivity: component.sensitivity,
+            mode: component.mode,
+            stability: component.stability,
+            weight: component.weight,
+            status: component.status,
+            durationMs: component.durationMs,
+            value: component.value,
+            error: component.error
+          }))
+        };
+      }
+
+      function buildCalculations(result, recalculated) {
+        const components = result.components;
+        const statusCounts = countBy(components, 'status');
+        const categoryCounts = countBy(components, 'category');
+        const sensitivityCounts = countBy(components, 'sensitivity');
+        const modeCounts = countBy(components, 'mode');
+        const stabilityCounts = countBy(components, 'stability');
+        const okComponents = components.filter((component) => component.status === 'ok');
+        const activeComponents = components.filter((component) => component.mode === 'active');
+        const passiveComponents = components.filter((component) => component.mode === 'passive');
+        const totalWeight = sum(components.map((component) => component.weight));
+        const okWeight = sum(okComponents.map((component) => component.weight));
+        const durationSum = sum(components.map((component) => component.durationMs));
+
+        return {
+          componentTotals: {
+            total: components.length,
+            ok: statusCounts.ok || 0,
+            empty: statusCounts.empty || 0,
+            skipped: statusCounts.skipped || 0,
+            error: statusCounts.error || 0,
+            timeout: statusCounts.timeout || 0
+          },
+          distributions: {
+            status: statusCounts,
+            category: categoryCounts,
+            sensitivity: sensitivityCounts,
+            mode: modeCounts,
+            stability: stabilityCounts
+          },
+          weights: {
+            totalWeight: round(totalWeight),
+            okWeight: round(okWeight),
+            collectedWeight: result.confidence.collectedWeight,
+            possibleWeight: result.confidence.possibleWeight,
+            okWeightRatio: round(okWeight / (totalWeight || 1))
+          },
+          modes: {
+            active: summarizeSubset(activeComponents),
+            passive: summarizeSubset(passiveComponents)
+          },
+          timing: {
+            resultDurationMs: result.meta.durationMs,
+            componentDurationMs: round(durationSum),
+            slowestComponents: components
+              .slice()
+              .sort((left, right) => right.durationMs - left.durationMs)
+              .slice(0, 5)
+              .map((component) => ({ id: component.id, status: component.status, durationMs: component.durationMs }))
+          },
+          hash: {
+            resultVisitorId: result.visitorId,
+            recalculatedVisitorId: recalculated.visitorId,
+            matches: recalculated.visitorId === result.visitorId,
+            resultAlgorithm: result.meta.hashAlgorithm,
+            recalculatedAlgorithm: recalculated.hashAlgorithm
+          },
+          storage: result.meta.storage,
+          schema: {
+            sdkVersion: result.meta.version,
+            schemaVersion: result.meta.schemaVersion
+          }
+        };
+      }
+
+      function summarizeSubset(components) {
+        return {
+          total: components.length,
+          ok: components.filter((component) => component.status === 'ok').length,
+          skipped: components.filter((component) => component.status === 'skipped').length,
+          error: components.filter((component) => component.status === 'error').length,
+          timeout: components.filter((component) => component.status === 'timeout').length
+        };
+      }
+
+      function toCompactCapability(component) {
+        return {
+          id: component.id,
+          category: component.category,
+          status: component.status,
+          sensitivity: component.sensitivity,
+          mode: component.mode,
+          stability: component.stability,
+          weight: component.weight,
+          durationMs: component.durationMs,
+          valueSummary: summarizeValue(component.value),
+          error: component.error
+        };
+      }
+
+      function summarizeValue(value) {
+        if (value === null) {
+          return null;
+        }
+
+        if (Array.isArray(value)) {
+          return { type: 'array', length: value.length };
+        }
+
+        if (typeof value === 'object') {
+          const keys = Object.keys(value);
+          return { type: 'object', keys, keyCount: keys.length };
+        }
+
+        return { type: typeof value, value };
+      }
+
+      function componentValue(result, id) {
+        const component = result.components.find((item) => item.id === id);
+        return component && component.status === 'ok' ? component.value : null;
+      }
+
+      function pickRisk(value) {
+        if (!value) {
+          return { verdict: 'unavailable', score: null, confidence: 'none', evidence: [] };
+        }
+
+        return {
+          verdict: value.verdict,
+          score: value.score,
+          confidence: value.confidence,
+          evidence: value.evidence || []
+        };
+      }
+
+      function countBy(items, key) {
+        return items.reduce((counts, item) => {
+          const value = item[key] || 'unknown';
+          counts[value] = (counts[value] || 0) + 1;
+          return counts;
+        }, {});
+      }
+
+      function sum(values) {
+        return values.reduce((total, value) => total + (Number.isFinite(value) ? Number(value) : 0), 0);
+      }
+
+      function round(value) {
+        return Math.round(Number(value || 0) * 1000) / 1000;
+      }
+
+      function renderMetrics(compact) {
+        metrics.visitor.textContent = compact.identity.visitorId || 'none';
+        metrics.bot.textContent = `${compact.risk.bot.verdict} (${compact.risk.bot.score ?? 'n/a'})`;
+        metrics.privacy.textContent = `${compact.risk.privateMode.verdict} (${compact.risk.privateMode.score ?? 'n/a'})`;
+        metrics.confidence.textContent = `${compact.quality.level} ${compact.quality.score}`;
+        metrics.bot.className = compact.risk.bot.verdict === 'bot' ? 'risk-bot' : compact.risk.bot.verdict === 'suspicious' ? 'risk-warn' : 'risk-ok';
+        metrics.privacy.className = compact.risk.privateMode.verdict === 'likely_private' ? 'risk-warn' : 'risk-ok';
+      }
+
+      function normalizeError(error) {
+        return {
+          name: error && error.name ? String(error.name) : 'Error',
+          message: error && error.message ? String(error.message) : String(error)
+        };
+      }
     </script>
   </body>
 </html>

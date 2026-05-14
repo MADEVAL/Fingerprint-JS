@@ -164,7 +164,7 @@ function renderText(canvas, canvasContext) {
   canvasContext.fillStyle = '#f60';
   canvasContext.fillRect(100, 1, 62, 20);
   canvasContext.fillStyle = '#069';
-  canvasContext.fillText('Fingerprint Framework 0.1', 2, 18);
+  canvasContext.fillText('FingerprintJS by BotBlocker 0.1', 2, 18);
   canvasContext.fillStyle = 'rgba(102, 204, 0, 0.65)';
   canvasContext.fillText('mwmw 12345', 4, 48);
   return summarizeCanvas(canvas);
@@ -188,5 +188,45 @@ function summarizeCanvas(canvas) {
       status: 'unstable',
       reason: error && error.message ? String(error.message) : 'canvas_read_failed'
     };
+  }
+}
+
+export function createWebglPrecisionCollector() {
+  return createCollector({
+    id: 'webgl.precision',
+    version: '1',
+    category: 'graphics',
+    sensitivity: 'high',
+    mode: 'active',
+    stability: 'stable',
+    weight: 0.65,
+    collect(context) {
+      const gl = getWebglContext(context);
+      if (!gl || typeof gl.getShaderPrecisionFormat !== 'function') {
+        return null;
+      }
+
+      return {
+        vertexHighFloat: readShaderPrecision(gl, gl.VERTEX_SHADER, gl.HIGH_FLOAT),
+        fragmentHighFloat: readShaderPrecision(gl, gl.FRAGMENT_SHADER, gl.HIGH_FLOAT),
+        vertexMediumFloat: readShaderPrecision(gl, gl.VERTEX_SHADER, gl.MEDIUM_FLOAT),
+        fragmentMediumFloat: readShaderPrecision(gl, gl.FRAGMENT_SHADER, gl.MEDIUM_FLOAT)
+      };
+    }
+  });
+}
+
+function readShaderPrecision(gl, shaderType, precisionType) {
+  try {
+    const format = gl.getShaderPrecisionFormat(shaderType, precisionType);
+    return format
+      ? {
+          precision: safeNumber(format.precision),
+          rangeMin: safeNumber(format.rangeMin),
+          rangeMax: safeNumber(format.rangeMax)
+        }
+      : null;
+  } catch (_error) {
+    return null;
   }
 }

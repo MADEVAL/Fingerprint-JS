@@ -308,6 +308,8 @@ test('bot detection collector scores automation evidence conservatively', () => 
       userAgent: 'Mozilla/5.0 Chrome/120.0 Safari/537.36',
       language: 'en-US',
       languages: ['en-US'],
+      hardwareConcurrency: 8,
+      deviceMemory: 8,
       plugins: { length: 1, 0: { name: 'PDF Viewer' } },
       mimeTypes: { length: 1, 0: { type: 'application/pdf' } }
     },
@@ -369,6 +371,121 @@ test('bot detection collector scores automation evidence conservatively', () => 
 
   const sparse = botDetection.collect({ window: {} });
   assert.equal(sparse.verdict, 'likely_human');
+
+  const inconsistent = botDetection.collect({
+    navigator: {
+      userAgent: 'Mozilla/5.0 Chrome/120.0 Safari/537.36',
+      language: 'bad locale!',
+      languages: ['fr-FR', 'fr-FR'],
+      hardwareConcurrency: 0,
+      deviceMemory: 256,
+      plugins: { length: 1, 0: { name: 'PDF Viewer', length: 0 } },
+      mimeTypes: { length: 0 },
+      permissions: { query() {} }
+    },
+    window: { chrome: {} }
+  });
+  assert.equal(inconsistent.verdict, 'suspicious');
+  assert.ok(inconsistent.evidence.includes('language.mismatch'));
+  assert.ok(inconsistent.evidence.includes('impossible.hardware'));
+  assert.ok(inconsistent.evidence.includes('plugin.inconsistency'));
+  assert.ok(inconsistent.evidence.includes('permissions.queryPatched'));
+  assert.ok(inconsistent.evidence.includes('empty.chrome.global'));
+
+  const pluginMismatch = botDetection.collect({
+    navigator: {
+      userAgent: 'Mozilla/5.0 Firefox/120.0',
+      language: 'en-US',
+      languages: ['en-US'],
+      plugins: {
+        length: 3,
+        0: { name: 'PDF One', length: 1 },
+        1: { name: 'Acrobat Two', length: 0 },
+        2: { name: 'PDF Three', length: 0 }
+      },
+      mimeTypes: { length: 1, 0: { type: 'application/pdf' } }
+    },
+    window: {}
+  });
+  assert.ok(pluginMismatch.evidence.includes('plugin.inconsistency'));
+
+  const brokenPluginEntry = botDetection.collect({
+    navigator: {
+      userAgent: 'Mozilla/5.0 Firefox/120.0',
+      language: 'en-US',
+      languages: ['en-US'],
+      plugins: { length: 1, 0: { name: 'Media Plugin', length: 1 } },
+      mimeTypes: { length: 1, 0: { type: 'video/mp4' } }
+    },
+    window: { chrome: true }
+  });
+  assert.ok(brokenPluginEntry.evidence.includes('plugin.inconsistency'));
+
+  const validPluginEntry = botDetection.collect({
+    navigator: {
+      userAgent: 'Mozilla/5.0 Firefox/120.0',
+      language: 'en-US',
+      languages: ['en-US'],
+      hardwareConcurrency: 256,
+      deviceMemory: 0.125,
+      plugins: { length: 1, 0: { name: 'Media Plugin', length: 1, 0: { type: 'video/mp4' } } },
+      mimeTypes: { length: 1, 0: { type: 'video/mp4' } }
+    },
+    window: { outerWidth: 0, outerHeight: 1, innerWidth: 0, innerHeight: 0 }
+  });
+  assert.equal(validPluginEntry.evidence.includes('plugin.inconsistency'), false);
+  assert.ok(validPluginEntry.evidence.includes('impossible.hardware'));
+
+  const chromeRuntime = botDetection.collect({
+    navigator: {
+      userAgent: 'Mozilla/5.0 Chrome/120.0 Firefox/120.0 Safari/537.36',
+      language: 'en-US',
+      languages: ['en-US'],
+      plugins: { length: 1, 0: { name: 'PDF Viewer' } },
+      mimeTypes: { length: 1, 0: { type: 'application/pdf' } }
+    },
+    window: { chrome: { runtime: {} } }
+  });
+  assert.equal(chromeRuntime.evidence.includes('empty.chrome.global'), false);
+  assert.equal(chromeRuntime.evidence.includes('empty.chrome.plugins'), false);
+
+  const unnamedPlugin = botDetection.collect({
+    navigator: {
+      userAgent: 'Mozilla/5.0 Firefox/120.0',
+      language: 'en-US',
+      languages: ['en-US'],
+      plugins: { length: 1, 0: { name: '', length: 0 } },
+      mimeTypes: { length: 1, 0: { type: 'application/x-test' } }
+    },
+    window: {}
+  });
+  assert.equal(unnamedPlugin.evidence.includes('plugin.inconsistency'), false);
+
+  const originalNativeToString = Function.prototype.toString;
+  Function.prototype.toString = () => 'function query() { [native code] }';
+  try {
+    const nativePermissions = botDetection.collect({
+      navigator: { permissions: { query() {} } },
+      window: {}
+    });
+    assert.equal(nativePermissions.evidence.includes('permissions.queryPatched'), false);
+  } finally {
+    Function.prototype.toString = originalNativeToString;
+  }
+
+  const originalFunctionToString = Function.prototype.toString;
+  Function.prototype.toString = function toStringThatThrows() {
+    throw new Error('blocked toString');
+  };
+  try {
+    const permissionsFallback = botDetection.collect({
+      navigator: { permissions: { query() {} } },
+      window: {}
+    });
+    assert.equal(permissionsFallback.evidence.includes('permissions.queryPatched'), false);
+  } finally {
+    Function.prototype.toString = originalFunctionToString;
+  }
 });
 
 test('privacy mode collector reports browser-only private-mode indicators', async () => {
@@ -887,6 +1004,38 @@ test('WebGL extensions collector captures sorted extensions and limits', () => {
   assert.deepEqual(noExtensionApi.extensions, []);
 });
 
+test('WebGL precision collector captures shader precision formats', () => {
+  const precision = collector('webgl.precision');
+  assert.equal(precision.collect({ document: null }), null);
+  assert.equal(precision.collect({ document: { createElement: () => ({ getContext: () => ({}) }) } }), null);
+
+  const gl = {
+    VERTEX_SHADER: 1,
+    FRAGMENT_SHADER: 2,
+    HIGH_FLOAT: 3,
+    MEDIUM_FLOAT: 4,
+    getShaderPrecisionFormat(shaderType, precisionType) {
+      if (shaderType === 2 && precisionType === 3) {
+        throw new Error('blocked');
+      }
+      if (shaderType === 1 && precisionType === 4) {
+        return null;
+      }
+      return { precision: shaderType + precisionType, rangeMin: Number.NaN, rangeMax: 127 };
+    }
+  };
+
+  const value = precision.collect({
+    document: { createElement: () => ({ getContext: () => gl }) }
+  });
+
+  assert.equal(value.vertexHighFloat.precision, 4);
+  assert.equal(value.vertexHighFloat.rangeMin, null);
+  assert.equal(value.fragmentHighFloat, null);
+  assert.equal(value.vertexMediumFloat, null);
+  assert.equal(value.fragmentMediumFloat.rangeMax, 127);
+});
+
 test('canvas collector handles unavailable and available canvas paths', () => {
   const canvas = collector('canvas.checksum');
 
@@ -1185,6 +1334,55 @@ test('audio collectors handle unsupported, suppressed, latency, promise, and eve
 });
 
 test('browser feature collectors cover plugins, vendor flavors, payment, private click, and blockers', () => {
+  const api = collector('browser.apiFeatures').collect({
+    window: { Promise, fetch() {}, localStorage: {}, performance: {} },
+    navigator: { clipboard: {}, permissions: {} }
+  });
+  assert.equal(api.javascript.Promise, true);
+  assert.equal(api.javascript.Proxy, false);
+  assert.equal(api.browser.fetch, true);
+  assert.equal(api.storage.localStorage, true);
+  assert.equal(api.navigator.clipboard, true);
+  assert.equal(collector('browser.apiFeatures').collect({ window: new Proxy({}, { has() { throw new Error('blocked'); } }), navigator: null }).browser.fetch, false);
+
+  const css = collector('browser.cssFeatures');
+  assert.equal(css.collect({ window: {} }), null);
+  assert.equal(css.collect({ window: { CSS: {} } }), null);
+  const cssValue = css.collect({
+    window: {
+      CSS: {
+        supports(property) {
+          if (property === 'anchor-name') {
+            throw new Error('unsupported');
+          }
+          return property === 'accent-color';
+        }
+      }
+    }
+  });
+  assert.equal(cssValue.accentColor, true);
+  assert.equal(cssValue.containerQueries, false);
+  assert.equal(cssValue.anchorPositioning, null);
+
+  const connection = collector('network.connection');
+  assert.equal(connection.collect({ navigator: {} }), null);
+  assert.equal(connection.collect({ navigator: null }), null);
+  assert.equal(connection.collect({ navigator: { connection: { type: 'wifi', saveData: true } } }).type, 'wifi');
+  const connectionValue = connection.collect({ navigator: { mozConnection: { effectiveType: '4g', downlink: 10, rtt: Number.NaN, saveData: false } } });
+  assert.equal(connectionValue.effectiveType, '4g');
+  assert.equal(connectionValue.type, null);
+  assert.equal(connectionValue.rtt, null);
+  assert.equal(connectionValue.saveData, false);
+  assert.equal(connection.collect({ navigator: { webkitConnection: { rtt: 20 } } }).rtt, 20);
+
+  const performanceMemory = collector('performance.memory');
+  assert.equal(performanceMemory.collect({ window: {} }), null);
+  assert.equal(performanceMemory.collect({ window: { performance: {} } }), null);
+  const memoryValue = performanceMemory.collect({ window: { performance: { memory: { jsHeapSizeLimit: 64 * 1024 * 1024, totalJSHeapSize: Number.NaN, usedJSHeapSize: 3 * 1024 * 1024 } } } });
+  assert.equal(memoryValue.jsHeapSizeLimitMB, 64);
+  assert.equal(memoryValue.totalJSHeapSizeMB, null);
+  assert.equal(memoryValue.usedJSHeapSizeMB, 3);
+
   assert.equal(collector('browser.plugins').collect({ navigator: {} }), null);
   assert.deepEqual(collector('browser.plugins').collect({ navigator: { plugins: { length: Number.NaN } } }), []);
   const plugins = collector('browser.plugins').collect({

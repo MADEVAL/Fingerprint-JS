@@ -37,8 +37,13 @@ export interface Collector<T = unknown, Prepared = unknown> {
 }
 
 export function createCollector<T = unknown, Prepared = unknown>(definition: CollectorDefinition<T, Prepared>): Collector<T, Prepared>;
+export function createApiFeaturesCollector(): Collector;
 export function createBotDetectionCollector(): Collector;
 export function createDefaultCollectors(): Collector[];
 export function createBrowserCollectorPack(): Collector[];
+export function createCssFeaturesCollector(): Collector;
+export function createNetworkConnectionCollector(): Collector;
 export function createNavigatorPropertiesCollector(): Collector;
+export function createPerformanceMemoryCollector(): Collector;
 export function createPrivacyModeCollector(): Collector;
+export function createWebglPrecisionCollector(): Collector;
