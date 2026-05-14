@@ -224,6 +224,10 @@ The debug inspector in [examples/inspector.html](examples/inspector.html) accept
 
 Additional docs:
 
+- [CHANGELOG.md](CHANGELOG.md)
+- [CONTRIBUTING.md](CONTRIBUTING.md)
+- [SECURITY.md](SECURITY.md)
 - [docs/TECHNICAL_SPEC.md](docs/TECHNICAL_SPEC.md)
 - [docs/VERSION_POLICY.md](docs/VERSION_POLICY.md)
 - [docs/AUDIT_REPORT.md](docs/AUDIT_REPORT.md)
+- [docs/PUBLISHING.md](docs/PUBLISHING.md)

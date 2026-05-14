@@ -14,6 +14,8 @@ This audit covers FingerprintJS by BotBlocker source code, package metadata, gen
 - Browser tests run against Chromium, Firefox, and WebKit through Playwright.
 - The minified browser bundle is checked against a 65 KB budget.
 - CI runs install, browser setup, and `npm run verify` on push and pull request.
+- Package publishing is guarded by `prepack` build and `prepublishOnly` verification scripts.
+- npm package dry-run includes only intended package, build, docs, examples, security, license, and release files.
 
 ## Current Feature Coverage
 
@@ -81,7 +83,7 @@ FingerprintJS by BotBlocker is suitable as a client-side signal layer for [BotBl
 
 1. Calibrate bot and private-mode scoring against real product traffic before automated enforcement.
 2. Keep the 65 KB bundle budget under review as additional risk signals are added.
-3. Add release automation when publishing credentials and release policy are defined.
+3. Add release automation with npm provenance when publishing credentials and release policy are defined.
 4. Expand browser stability fixtures for product-specific flows and target browser versions.
 5. Run a production observation window before changing default identity collector membership.
 6. Connect the backend network adapter to a production IP intelligence provider before using proxy/VPN/datacenter evidence for enforcement.

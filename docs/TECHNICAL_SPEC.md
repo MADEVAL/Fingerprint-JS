@@ -286,3 +286,5 @@ Recommended backend payload:
 - Node tests with 100% line, branch, and function coverage for `src/**/*.js`;
 - Playwright tests in Chromium, Firefox, and WebKit;
 - minified browser bundle size check under 65 KB.
+
+Release readiness additionally uses `npm audit --omit=dev`, `npm pack --dry-run`, and `npm publish --dry-run`.
