@@ -256,12 +256,12 @@
 
       <div class="reports">
         <section>
-          <div class="panel-head"><h2>Compact report</h2><span>summary plus every capability</span></div>
-          <pre id="compact-output">Ready</pre>
+          <div class="panel-head"><h2>ID analysis</h2><span>readable scoring payload</span></div>
+          <pre id="analysis-output">Ready</pre>
         </section>
         <section>
-          <div class="panel-head"><h2>ID analysis</h2><span>short ID, weights, and results</span></div>
-          <pre id="analysis-output">Ready</pre>
+          <div class="panel-head"><h2>Compact report</h2><span>summary plus every capability</span></div>
+          <pre id="compact-output">Ready</pre>
         </section>
         <section>
           <div class="panel-head"><h2>Full report</h2><span>raw result plus calculations</span></div>
@@ -319,8 +319,8 @@
         const full = buildFullReport(result, recalculated, allSignalsHash, calculations, stability, analysis);
 
         renderMetrics(compact);
-        compactOutput.textContent = JSON.stringify(compact, null, 2);
         analysisOutput.textContent = JSON.stringify(analysis, null, 2);
+        compactOutput.textContent = JSON.stringify(compact, null, 2);
         fullOutput.textContent = JSON.stringify(full, null, 2);
         statusOutput.textContent = `Done in ${result.meta.durationMs} ms`;
         identifyButton.disabled = false;

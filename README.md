@@ -204,11 +204,11 @@ Collection confidence and identity confidence are both exposed. `confidence.scor
 The browser demo in [examples/browser.html](examples/browser.html) renders three reports side by side and tracks repeated runs:
 
 - Compact report: concise identity, risk, quality, calculations, and every capability with status, role, hashability, weight, duration, value summary, and error state.
-- ID analysis report: shortest dense format for backend scoring. It contains `id`, request metadata, confidence, aggregate weights, hash checks, risk verdicts, and every component's role, status, weight, raw result, and error.
+- ID analysis report: shortest dense format for backend scoring. It is rendered as readable JSON and contains `id`, request metadata, compact confidence, totals, aggregate weights, `weights.byComponent`, hash checks, risk verdicts, identity/report-only lists, and short `results` summaries keyed by component ID.
 - Full report: raw SDK result, recalculated hash, all-signals hash, derived calculations, stability data, explainable report, ID analysis report, and every component value/error.
 - Stability view: baseline visitor ID, current visitor ID, identity input count, report-only count, changed identity/report-only components, and recent run history.
 
-All demo outputs are generated from the same `IdentifyResult`. The compact and ID analysis formats include every collected capability; the full format additionally embeds the raw result and explainable report. Use the `extended` profile in the demo to exercise the full collector pack and confirm that report-only changes do not move the stable visitor ID.
+All demo outputs are generated from the same `IdentifyResult` and are ordered by verbosity: ID analysis, compact report, then full report. The compact format includes every collected capability with readable summaries. The ID analysis format keeps every component represented through weight and result maps without dumping raw component objects. The full format additionally embeds the raw result and explainable report. Use the `extended` profile in the demo to exercise the full collector pack and confirm that report-only changes do not move the stable visitor ID.
 
 The debug inspector in [examples/inspector.html](examples/inspector.html) accepts an `IdentifyResult`, full demo report JSON, or ID analysis report JSON and explains identity components, report-only components, tamper, bot, and private-mode evidence.
 

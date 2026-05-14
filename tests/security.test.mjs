@@ -155,10 +155,17 @@ test('explainable report separates identity, report-only, and risk evidence', ()
   assert.throws(() => createExplainableReport(null), /IdentifyResult-like/u);
 });
 
-test('analysis report keeps id, weights, hashes, risk, and raw component results dense', () => {
+test('analysis report keeps id, weights, hashes, risk, and result summaries dense', () => {
   const result = makeResult('id', [
     component('stable', 'ok', { stable: true }, true),
     component('risk', 'ok', { verdict: 'ok', score: 0, evidence: [] }, false),
+    component('risk.sparse', 'ok', { verdict: 'review', evidence: 'missing' }, false),
+    component('array.value', 'ok', [1, 2, 3], false),
+    component('string.value', 'ok', 'ready', false),
+    component('number.value', 'ok', 7, false),
+    component('boolean.value', 'ok', true, false),
+    component('undefined.value', 'ok', undefined, false),
+    { ...component('missing.error', 'error', null, false), error: null },
     { ...component('bad', 'error', null, true), weight: Number.NaN, error: { code: 'failed', message: 'No value' } },
     component('browser.tamperEvidence', 'ok', { verdict: 'clean', score: 0, confidence: 'high', evidence: [] }, false)
   ], ['stable']);
@@ -169,15 +176,28 @@ test('analysis report keeps id, weights, hashes, risk, and raw component results
 
   assert.equal(report.id, 'id');
   assert.equal(report.totals.identity, 1);
-  assert.equal(report.totals.reportOnly, 3);
-  assert.equal(report.weights.total, 3);
+  assert.equal(report.totals.reportOnly, 10);
+  assert.equal(report.totals.failed, 2);
+  assert.equal(report.confidence.score, 1);
+  assert.equal(report.confidence.qualityScore, 1);
+  assert.equal(report.weights.total, 10);
   assert.equal(report.weights.identity, 1);
+  assert.equal(report.weights.byComponent.stable, 1);
+  assert.equal(report.weights.byComponent.bad, 0);
   assert.equal(report.hash.recalculatedMatches, true);
   assert.equal(report.hash.allSignalsDiffers, true);
   assert.equal(report.risk.tamper.verdict, 'clean');
-  assert.deepEqual(report.components.find((item) => item.id === 'stable').result, { stable: true });
-  assert.equal(report.components.find((item) => item.id === 'bad').result, null);
-  assert.equal(report.components.find((item) => item.id === 'bad').error.code, 'failed');
+  assert.equal(report.risk.tamper.evidence, 0);
+  assert.equal(report.results.stable, 'object:1');
+  assert.deepEqual(report.results.risk, { verdict: 'ok', score: 0, confidence: 'none', evidence: 0 });
+  assert.deepEqual(report.results['risk.sparse'], { verdict: 'review', score: null, confidence: 'none', evidence: 0 });
+  assert.equal(report.results['array.value'], 'array:3');
+  assert.equal(report.results['string.value'], 'ready');
+  assert.equal(report.results['number.value'], 7);
+  assert.equal(report.results['boolean.value'], true);
+  assert.equal(report.results['undefined.value'], 'undefined');
+  assert.equal(report.results['missing.error'], 'error');
+  assert.equal(report.results.bad, 'error:failed');
 
   const minimal = createAnalysisReport({ components: [], meta: {} });
   assert.equal(minimal.id, null);
@@ -186,6 +206,11 @@ test('analysis report keeps id, weights, hashes, risk, and raw component results
   assert.equal(minimal.confidence, null);
   assert.equal(minimal.weights.collected, null);
   assert.equal(minimal.hash.recalculatedMatches, null);
+  assert.deepEqual(minimal.results, {});
+
+  const partialConfidence = createAnalysisReport({ components: [], meta: {}, confidence: { score: 0.2, level: 'low' } });
+  assert.equal(partialConfidence.confidence.qualityScore, null);
+  assert.equal(partialConfidence.confidence.qualityLevel, null);
 });
 
 test('use-case presets merge into client policy and identity options', async () => {

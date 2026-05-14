@@ -121,10 +121,10 @@ Use-case presets combine profile, policy, and identity defaults for common deplo
 The browser demo additionally derives compact, ID analysis, and full reports from this result:
 
 - Compact report: concise identity, risk, quality, hash checks, calculations, stability, and every capability with role, hashability, status, weight, duration, value summary, and error state.
-- ID analysis report: shortest dense scoring format from `createAnalysisReport()`. It includes visitor ID, request metadata, confidence, aggregate weights, hash checks, risk verdicts, and every component's role, status, weight, raw result, and error.
+- ID analysis report: shortest dense scoring format from `createAnalysisReport()`. It includes visitor ID, request metadata, compact confidence, totals, aggregate weights, per-component weight map, hash checks, risk verdicts, identity/report-only lists, and short result summaries keyed by component ID. It intentionally does not duplicate raw component objects.
 - Full report: raw `IdentifyResult`, recalculated hash, all-signals hash, derived calculations, stability data, explainable report, ID analysis report, and every component value/error.
 
-All three demo outputs are derived from the same `IdentifyResult`, so component counts, identity/report-only roles, hash checks, and risk summaries stay consistent across formats.
+All three demo outputs are derived from the same `IdentifyResult` and are ordered by verbosity: ID analysis, compact report, then full report. Component counts, identity/report-only roles, hash checks, and risk summaries stay consistent across formats.
 
 ## Hashing And Identity
 
@@ -181,7 +181,7 @@ The network adapter intentionally does not make built-in network calls. Host app
 ## Public Report APIs
 
 - `createExplainableReport(result, options)`: produces a readable report with identity/report-only reasons, risk summaries, and optional component values.
-- `createAnalysisReport(result, options)`: produces the shortest dense scoring report with ID, confidence, aggregate weights, optional hash checks, risk verdicts, and raw component results.
+- `createAnalysisReport(result, options)`: produces the shortest dense scoring report with ID, confidence, aggregate weights, optional hash checks, risk verdicts, per-component weight map, and short result summaries.
 - `explainComponent(component, identityComponents, options)`: explains a single component role and reason.
 - [examples/inspector.html](../examples/inspector.html) accepts raw `IdentifyResult`, full demo report JSON, and ID analysis report JSON for local debugging.
 

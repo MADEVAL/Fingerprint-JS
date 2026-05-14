@@ -3255,24 +3255,24 @@ function createExplainableReport(result, options = {}) {
 function createAnalysisReport(result, options = {}) {
   assertResult2(result);
   const identityComponents = new Set(result.meta && Array.isArray(result.meta.identityComponents) ? result.meta.identityComponents : []);
-  const components = Object.freeze(result.components.map((component) => analysisComponent(component, identityComponents)));
   const risk = buildRiskSummary(result.components);
   return Object.freeze({
     id: result.visitorId || null,
     requestId: result.requestId || null,
     namespace: result.namespace || "default",
     profile: result.meta && result.meta.profile ? result.meta.profile : null,
-    confidence: result.confidence || null,
+    confidence: summarizeConfidence(result.confidence || null),
+    totals: summarizeTotals(result.components, identityComponents),
     weights: summarizeWeights(result.components, result.confidence || {}, identityComponents),
-    totals: Object.freeze({
-      total: components.length,
-      ok: countStatus(result.components, "ok"),
-      identity: components.filter((component) => component.role === "identity").length,
-      reportOnly: components.filter((component) => component.role === "report-only").length
-    }),
     hash: buildHashSummary(result, options),
-    risk,
-    components
+    risk: Object.freeze({
+      bot: compactRisk(risk.bot),
+      privateMode: compactRisk(risk.privateMode),
+      tamper: compactRisk(risk.tamper)
+    }),
+    identityComponents: Object.freeze(Array.from(identityComponents)),
+    reportOnlyComponents: Object.freeze(result.meta && Array.isArray(result.meta.reportOnlyComponents) ? result.meta.reportOnlyComponents.slice() : []),
+    results: summarizeResults(result.components)
   });
 }
 function explainComponent(component, identityComponents = [], options = {}) {
@@ -3307,20 +3307,24 @@ function explainReason(component, role) {
   }
   return component.hashable === false ? "report_only_collector" : "excluded_by_identity_policy";
 }
-function analysisComponent(component, identityComponents) {
+function summarizeConfidence(confidence) {
+  if (!confidence) {
+    return null;
+  }
   return Object.freeze({
-    id: component.id,
-    role: identityComponents.has(component.id) ? "identity" : "report-only",
-    status: component.status,
-    weight: component.weight,
-    category: component.category,
-    sensitivity: component.sensitivity,
-    mode: component.mode,
-    stability: component.stability,
-    hashable: component.hashable,
-    durationMs: component.durationMs,
-    result: component.status === "ok" ? component.value : null,
-    error: component.error || null
+    score: confidence.score,
+    level: confidence.level,
+    qualityScore: confidence.collectionQuality ? confidence.collectionQuality.score : null,
+    qualityLevel: confidence.collectionQuality ? confidence.collectionQuality.level : null
+  });
+}
+function summarizeTotals(components, identityComponents) {
+  return Object.freeze({
+    total: components.length,
+    ok: countStatus(components, "ok"),
+    identity: components.filter((component) => identityComponents.has(component.id)).length,
+    reportOnly: components.filter((component) => !identityComponents.has(component.id)).length,
+    failed: components.filter((component) => component.status === "error" || component.status === "timeout").length
   });
 }
 function summarizeWeights(components, confidence, identityComponents) {
@@ -3335,7 +3339,8 @@ function summarizeWeights(components, confidence, identityComponents) {
     collected: Number.isFinite(confidence.collectedWeight) ? confidence.collectedWeight : null,
     possible: Number.isFinite(confidence.possibleWeight) ? confidence.possibleWeight : null,
     qualityCollected: confidence.collectionQuality && Number.isFinite(confidence.collectionQuality.collectedWeight) ? confidence.collectionQuality.collectedWeight : null,
-    qualityPossible: confidence.collectionQuality && Number.isFinite(confidence.collectionQuality.possibleWeight) ? confidence.collectionQuality.possibleWeight : null
+    qualityPossible: confidence.collectionQuality && Number.isFinite(confidence.collectionQuality.possibleWeight) ? confidence.collectionQuality.possibleWeight : null,
+    byComponent: freezeRecord(Object.fromEntries(components.map((component) => [component.id, Number.isFinite(component.weight) ? component.weight : 0])))
   });
 }
 function buildHashSummary(result, options) {
@@ -3343,11 +3348,47 @@ function buildHashSummary(result, options) {
   const allSignals = options.allSignalsHash || null;
   return Object.freeze({
     algorithm: result.meta && result.meta.hashAlgorithm ? result.meta.hashAlgorithm : null,
-    recalculatedVisitorId: recalculated ? recalculated.visitorId : null,
     recalculatedMatches: recalculated ? recalculated.visitorId === result.visitorId : null,
-    allSignalsVisitorId: allSignals ? allSignals.visitorId : null,
     allSignalsDiffers: allSignals ? allSignals.visitorId !== result.visitorId : null
   });
+}
+function compactRisk(value) {
+  return Object.freeze({
+    verdict: value.verdict,
+    score: value.score,
+    confidence: value.confidence,
+    evidence: value.evidence.length
+  });
+}
+function summarizeResults(components) {
+  return freezeRecord(Object.fromEntries(components.map((component) => [component.id, summarizeAnalysisValue(component)])));
+}
+function summarizeAnalysisValue(component) {
+  if (component.status !== "ok") {
+    return component.error && component.error.code ? `${component.status}:${component.error.code}` : component.status;
+  }
+  const value = component.value;
+  if (value && typeof value === "object" && !Array.isArray(value) && value.verdict) {
+    return compactRisk({
+      verdict: value.verdict,
+      score: Number.isFinite(value.score) ? value.score : null,
+      confidence: value.confidence || "none",
+      evidence: Array.isArray(value.evidence) ? value.evidence : []
+    });
+  }
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return `array:${value.length}`;
+  }
+  if (typeof value === "object") {
+    return `object:${Object.keys(value).length}`;
+  }
+  return typeof value;
+}
+function freezeRecord(record) {
+  return Object.freeze(record);
 }
 function sumWeights(components) {
   return components.reduce((total, component) => total + (Number.isFinite(component.weight) ? Number(component.weight) : 0), 0);

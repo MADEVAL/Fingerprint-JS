@@ -7,6 +7,7 @@ const inspectorUrl = pathToFileURL(resolve('examples/inspector.html')).href;
 
 test('standalone browser bundle identifies from the script-tag demo', async ({ page }) => {
   await page.goto(demoUrl);
+  await expect(page.locator('.reports h2')).toHaveText(['ID analysis', 'Compact report', 'Full report']);
   await page.getByRole('button', { name: 'Identify' }).click();
 
   const compactOutput = page.locator('#compact-output');
@@ -17,6 +18,7 @@ test('standalone browser bundle identifies from the script-tag demo', async ({ p
   await expect(fullOutput).toContainText('"components"');
 
   const compact = JSON.parse(await compactOutput.textContent());
+  const analysisText = await analysisOutput.textContent();
   const analysis = JSON.parse(await analysisOutput.textContent());
   const full = JSON.parse(await fullOutput.textContent());
 
@@ -28,15 +30,18 @@ test('standalone browser bundle identifies from the script-tag demo', async ({ p
   expect(compact.risk.tamper.verdict).toBeTruthy();
   expect(compact.capabilities.every((component) => typeof component.weight === 'number' && typeof component.usedForVisitorId === 'boolean')).toBe(true);
   expect(analysis.id).toBe(compact.identity.visitorId);
-  expect(analysis.components.length).toBe(compact.capabilities.length);
-  expect(analysis.components.every((component) => Object.hasOwn(component, 'weight') && Object.hasOwn(component, 'result'))).toBe(true);
+  expect(analysisText.split('\n').length).toBeGreaterThan(1);
+  expect(analysisText.split('\n').length).toBeLessThan((await compactOutput.textContent()).split('\n').length);
+  expect(analysis.totals.total).toBe(compact.capabilities.length);
+  expect(Object.keys(analysis.weights.byComponent).length).toBe(compact.capabilities.length);
+  expect(Object.keys(analysis.results).length).toBe(compact.capabilities.length);
   expect(analysis.hash.recalculatedMatches).toBe(true);
   expect(full.result.meta.profile).toBe('extended');
   expect(full.result.meta.blocked).toBe(false);
   expect(full.components.length).toBe(compact.capabilities.length);
   expect(full.result.components.length).toBe(compact.capabilities.length);
   expect(full.explainableReport.components.length).toBe(compact.capabilities.length);
-  expect(full.analysisReport.components.length).toBe(compact.capabilities.length);
+  expect(full.analysisReport.totals.total).toBe(compact.capabilities.length);
   expect(full.calculations.hash.matches).toBe(true);
   expect(full.analysisReport.id).toBe(compact.identity.visitorId);
   expect(compact.identity.matchesBaseline).toBe(true);

@@ -118,7 +118,8 @@
           const parsed = JSON.parse(input.value);
           const result = parsed.result || parsed.analysisReport || parsed;
           const components = Array.isArray(result.components) ? result.components : [];
-          const identity = new Set(result.meta && Array.isArray(result.meta.identityComponents) ? result.meta.identityComponents : []);
+          const results = result.results && typeof result.results === 'object' ? result.results : {};
+          const identity = new Set(result.meta && Array.isArray(result.meta.identityComponents) ? result.meta.identityComponents : Array.isArray(result.identityComponents) ? result.identityComponents : []);
           for (const component of components) {
             if (component.role === 'identity') {
               identity.add(component.id);
@@ -126,30 +127,41 @@
           }
           const reportOnly = result.meta && Array.isArray(result.meta.reportOnlyComponents)
             ? result.meta.reportOnlyComponents
-            : components.filter((component) => component.role === 'report-only').map((component) => component.id);
+            : Array.isArray(result.reportOnlyComponents)
+              ? result.reportOnlyComponents
+              : components.filter((component) => component.role === 'report-only').map((component) => component.id);
           output.textContent = JSON.stringify({
             visitorId: result.visitorId || result.id || null,
             namespace: result.namespace || null,
             confidence: result.confidence || null,
             identityComponents: Array.from(identity),
             reportOnlyComponents: reportOnly,
-            tamper: riskValue(components, 'browser.tamperEvidence'),
-            bot: riskValue(components, 'browser.botDetection'),
-            privateMode: riskValue(components, 'browser.privacyMode'),
-            components: components.map((component) => ({
+            tamper: riskValue(result, components, 'browser.tamperEvidence'),
+            bot: riskValue(result, components, 'browser.botDetection'),
+            privateMode: riskValue(result, components, 'browser.privacyMode'),
+            components: components.length ? components.map((component) => ({
               id: component.id,
               role: identity.has(component.id) ? 'identity' : 'report-only',
               status: component.status,
               hashable: component.hashable,
               stability: component.stability
-            }))
+            })) : Object.keys(results).map((id) => ({ id, role: identity.has(id) ? 'identity' : 'report-only', result: results[id] }))
           }, null, 2);
         } catch (error) {
           output.innerHTML = '<span class="warn">Invalid JSON: ' + escapeHtml(error.message || String(error)) + '</span>';
         }
       }
 
-      function riskValue(components, id) {
+      function riskValue(result, components, id) {
+        if (result.risk && id === 'browser.tamperEvidence') {
+          return result.risk.tamper || null;
+        }
+        if (result.risk && id === 'browser.botDetection') {
+          return result.risk.bot || null;
+        }
+        if (result.risk && id === 'browser.privacyMode') {
+          return result.risk.privateMode || null;
+        }
         const component = components.find((item) => item.id === id && item.status === 'ok');
         return component && (component.value || component.result) ? component.value || component.result : null;
       }
