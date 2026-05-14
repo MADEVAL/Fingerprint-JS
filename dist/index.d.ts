@@ -10,7 +10,7 @@ export interface CollectorContext {
   navigator: Navigator | null;
   screen: Screen | null;
   crypto: Crypto | null;
-  consent: ConsentState | null;
+  consent: boolean | ConsentState | null;
   now: () => number;
 }
 

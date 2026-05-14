@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "allowJs": false,
+    "declaration": false,
+    "emitDeclarationOnly": false,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": true,
+    "strict": true,
+    "target": "ES2022",
+    "types": []
+  },
+  "include": [
+    "dist/**/*.d.ts",
+    "tests/types/**/*.ts"
+  ]
+}

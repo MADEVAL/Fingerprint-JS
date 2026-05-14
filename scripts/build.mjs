@@ -1,61 +1,69 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, rm } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+import { build } from 'esbuild';
 
 const root = process.cwd();
-const sourcePath = resolve(root, 'src/index.js');
-const typesPath = resolve(root, 'types/index.d.ts');
 const distPath = resolve(root, 'dist');
-const esmPath = resolve(distPath, 'index.mjs');
-const dtsPath = resolve(distPath, 'index.d.ts');
 const browserPath = resolve(distPath, 'browser/fingerprint-framework.js');
 const minPath = resolve(distPath, 'browser/fingerprint-framework.min.js');
-const banner = '/* Fingerprint Framework v0.1.0 | MIT */\n';
+const banner = '/* Fingerprint Framework v0.1.0 | MIT */';
 
 await rm(distPath, { recursive: true, force: true });
-await mkdir(dirname(esmPath), { recursive: true });
 await mkdir(dirname(browserPath), { recursive: true });
 
-const source = await readFile(sourcePath, 'utf8');
-const types = await readFile(typesPath, 'utf8');
+await build({
+  entryPoints: {
+    index: resolve(root, 'src/index.js'),
+    collectors: resolve(root, 'src/collectors/index.js'),
+    policy: resolve(root, 'src/policy.js'),
+    storage: resolve(root, 'src/storage-public.js')
+  },
+  outdir: distPath,
+  bundle: true,
+  format: 'esm',
+  platform: 'node',
+  target: 'es2020',
+  outExtension: { '.js': '.mjs' },
+  banner: { js: banner },
+  legalComments: 'none'
+});
 
-await writeFile(esmPath, `${banner}${source}`, 'utf8');
-await writeFile(dtsPath, types, 'utf8');
+const browserBuildOptions = {
+  entryPoints: [resolve(root, 'src/index.js')],
+  bundle: true,
+  format: 'iife',
+  globalName: 'FingerprintFramework',
+  platform: 'browser',
+  target: 'es2020',
+  external: ['node:crypto'],
+  banner: { js: banner },
+  legalComments: 'none'
+};
 
-const browserBody = source.replace(/\nexport \{[\s\S]*?\n\};\s*$/u, '');
-const browserApi = `
-  const api = Object.freeze({
-    VERSION,
-    PROFILE_PRESETS,
-    canonicalStringify,
-    createBrowserCollectorPack,
-    createClient,
-    createCollector,
-    createDefaultCollectors,
-    createPolicy,
-    hashValue
-  });
+await build({
+  ...browserBuildOptions,
+  outfile: browserPath
+});
 
-  root.FingerprintFramework = api;
-  if (typeof module !== 'undefined' && module.exports) {
-    module.exports = api;
+await build({
+  ...browserBuildOptions,
+  outfile: minPath,
+  minify: true
+});
+
+await copyTypes();
+
+async function copyTypes() {
+  const pairs = [
+    ['types/index.d.ts', 'dist/index.d.ts'],
+    ['types/collectors.d.ts', 'dist/collectors.d.ts'],
+    ['types/policy.d.ts', 'dist/policy.d.ts'],
+    ['types/storage.d.ts', 'dist/storage.d.ts']
+  ];
+
+  for (const [from, to] of pairs) {
+    const target = resolve(root, to);
+    await mkdir(dirname(target), { recursive: true });
+    await copyFile(resolve(root, from), target);
   }
-`;
-
-const browserBundle = `${banner}(function attachFingerprintFramework(root) {\n  'use strict';\n${indent(browserBody, 2)}\n${browserApi}})(typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : this);\n`;
-
-await writeFile(browserPath, browserBundle, 'utf8');
-await writeFile(minPath, minify(browserBundle), 'utf8');
-
-function indent(text, spaces) {
-  const prefix = ' '.repeat(spaces);
-  return text.split('\n').map((line) => (line ? `${prefix}${line}` : line)).join('\n');
-}
-
-function minify(text) {
-  return text
-    .replace(/\/\*[^!*][\s\S]*?\*\//gu, '')
-    .replace(/\n\s*/gu, '\n')
-    .replace(/\s{2,}/gu, ' ')
-    .replace(/\n/gu, '')
-    .trim();
 }

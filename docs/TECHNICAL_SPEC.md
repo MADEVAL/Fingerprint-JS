@@ -1,74 +1,78 @@
-# Техническое задание: Fingerprint Framework
+# Technical Specification: Fingerprint Framework
 
-## 1. Цель
+## 1. Goal
 
-Создать универсальный пакет-фреймворк для browser fingerprinting и device intelligence, который выглядит и используется как зрелый SDK: модульная архитектура, расширяемые collectors, политики приватности, стабильная сборка для npm и отдельный JS-файл для подключения на страницу.
+Create a universal browser fingerprinting and device intelligence framework that looks and behaves like a mature SDK: modular architecture, extensible collectors, privacy policies, a stable npm build, and a standalone JavaScript file for direct page usage.
 
-Решение должно быть не просто аналогом FingerprintJS, а более широким фундаментом: не один алгоритм снятия отпечатка, а управляемая платформа сигналов, качества, consent-политик, хранения и интеграции.
+The solution must be broader than a single FingerprintJS-style algorithm. It should provide a managed platform for signals, quality scoring, consent policies, storage, and integration.
 
-## 2. Принципы продукта
+## 2. Product Principles
 
-- Privacy by design: библиотека не должна поощрять скрытый сбор данных. Все активные и высокочувствительные signals управляются policy layer.
-- Deterministic core: одинаковые стабильные signals должны давать одинаковый `visitorId`.
-- Framework feel: понятные public API, типы, docs, examples, build scripts, тесты.
-- Runtime portability: browser-first, но код должен корректно запускаться в Node для тестов и server-side сценариев.
-- No hard dependencies: базовая версия должна собираться и тестироваться без установки сторонних пакетов.
+- Privacy by design: the library must not encourage hidden data collection. Active and high-sensitivity signals are controlled by the policy layer.
+- Deterministic core: the same stable signals must produce the same `visitorId`.
+- Framework feel: clear public API, declarations, documentation, examples, build scripts, and tests.
+- Runtime portability: browser-first behavior with correct Node execution for tests and server-side scenarios.
+- No hard dependencies: the base package must build and test without installing third-party packages.
 
-## 3. Область применения
+## 3. Scope
 
-Основные легитимные сценарии:
+Primary legitimate scenarios:
 
-- защита аккаунтов и транзакций от fraud;
-- risk scoring для входа и оплаты;
-- обнаружение подозрительных browser/runtime изменений;
-- аналитика качества сессий с учетом согласий;
-- собственные продуктовые collectors через plugin API.
+- account and transaction fraud protection;
+- risk scoring for sign-in and payment flows;
+- detection of suspicious browser or runtime changes;
+- session quality analytics with consent awareness;
+- product-specific collectors through the plugin API.
 
-Ограничения:
+Constraints:
 
-- не проектировать механизмы обхода антифингерпринтинга, приватных режимов или пользовательских настроек браузера;
-- не скрывать факт сбора signals от продукта-интегратора;
-- не хранить кросс-сайтовые идентификаторы по умолчанию.
+- do not design mechanisms to bypass anti-fingerprinting controls, private browsing modes, or user browser settings;
+- do not hide signal collection from the integrating product;
+- do not store cross-site identifiers by default.
 
-## 4. Публичные артефакты
+## 4. Public Artifacts
 
-Пакет должен поставлять:
+The package must ship:
 
-- `dist/index.mjs`: ESM build для bundlers и Node;
+- `dist/index.mjs`: ESM build for bundlers and Node;
+- `dist/collectors.mjs`: collector subpath build;
+- `dist/policy.mjs`: policy subpath build;
+- `dist/storage.mjs`: storage subpath build;
 - `dist/index.d.ts`: TypeScript declarations;
-- `dist/browser/fingerprint-framework.js`: читаемый browser global build;
-- `dist/browser/fingerprint-framework.min.js`: компактный script-tag build;
-- `docs/TECHNICAL_SPEC.md`: это ТЗ;
-- `examples/browser.html`: пример подключения обычным `<script>`;
-- `examples/node.mjs`: пример ESM использования;
-- `tests/*.test.mjs`: unit tests без внешних библиотек.
+- `dist/collectors.d.ts`, `dist/policy.d.ts`, `dist/storage.d.ts`: subpath declarations;
+- `dist/browser/fingerprint-framework.js`: readable browser global build;
+- `dist/browser/fingerprint-framework.min.js`: compact script-tag build;
+- `docs/TECHNICAL_SPEC.md`: this technical specification;
+- `examples/browser.html`: plain `<script>` usage example;
+- `examples/node.mjs`: ESM usage example;
+- `tests/*.test.mjs`: unit tests without external libraries.
 
-## 5. Архитектура
+## 5. Architecture
 
 ### 5.1 Core API
 
-Главная точка входа:
+Main entry point:
 
 ```js
 const client = createClient(options);
 const result = await client.identify(context);
 ```
 
-`createClient` отвечает за:
+`createClient` is responsible for:
 
-- нормализацию опций;
-- выбор collectors;
-- применение policy layer;
-- сбор signals с timeout;
+- option normalization;
+- collector selection;
+- policy layer application;
+- signal collection with timeout handling;
 - canonical normalization;
-- построение hash input;
-- вычисление `visitorId`;
+- hash input construction;
+- `visitorId` calculation;
 - confidence scoring;
-- опциональное обновление storage state.
+- optional storage state updates.
 
 ### 5.2 Collector API
 
-Collector это независимый источник signals:
+A collector is an independent signal source:
 
 ```js
 createCollector({
@@ -85,75 +89,75 @@ createCollector({
 });
 ```
 
-Требования к collector:
+Collector requirements:
 
-- `id` должен быть стабильным и уникальным;
-- `collect` может быть sync или async;
-- ошибки collector не должны ломать весь `identify`;
-- результат collector проходит canonical normalization;
-- high-sensitivity collectors отключаются policy, если профиль не разрешает их.
+- `id` must be stable and unique;
+- `collect` can be synchronous or asynchronous;
+- collector errors must not break the whole `identify` call;
+- collector output passes through canonical normalization;
+- high-sensitivity collectors are disabled by policy unless the selected profile allows them.
 
 ### 5.3 Policy Layer
 
-Policy решает, какие collectors запускать:
+The policy decides which collectors are allowed to run:
 
 - `profile`: `strict`, `balanced`, `extended`;
-- `requireConsent`: вернуть blocked-result без сбора signals, если согласие не передано;
-- `maxSensitivity`: верхняя граница sensitivity;
-- `includeActive`: разрешение активных probes;
+- `requireConsent`: return a blocked result without collecting signals when consent is missing;
+- `maxSensitivity`: upper sensitivity bound;
+- `includeActive`: permission for active probes;
 - `allowCollectors` / `denyCollectors`;
 - `allowCategories` / `denyCategories`;
-- `redactValues`: скрывать значения signals в result, оставляя метаданные.
+- `redactValues`: hide signal values in the result while retaining metadata.
 
 ### 5.4 Normalization and Hashing
 
-Перед хешированием все values приводятся к canonical JSON:
+Before hashing, all values are converted to canonical JSON:
 
-- ключи объектов сортируются;
-- `undefined`, functions и symbols исключаются;
-- нечисловые `NaN` / `Infinity` приводятся к `null`;
-- `Date` приводится к ISO string;
-- `BigInt` приводится к decimal string.
+- object keys are sorted;
+- `undefined`, functions, and symbols are removed from objects;
+- non-finite `NaN` / `Infinity` numbers become `null`;
+- `Date` values become ISO strings;
+- `BigInt` values become decimal strings.
 
-Hash input включает:
+Hash input includes:
 
 - schema version;
 - namespace;
 - salt;
-- версии collectors;
+- collector versions;
 - canonical values.
 
-Алгоритм:
+Algorithm:
 
-- основной: SHA-256 через Web Crypto или Node Crypto;
-- fallback: deterministic non-cryptographic hash для старых окружений, с явной пометкой алгоритма.
+- primary: SHA-256 through Web Crypto or Node Crypto;
+- fallback: deterministic non-cryptographic hash for constrained runtimes, with explicit algorithm metadata.
 
 ### 5.5 Confidence Scoring
 
-`confidence` должен показывать качество результата, а не обещать абсолютную уникальность:
+`confidence` should describe result quality, not promise absolute uniqueness:
 
 - `score`: 0..1;
 - `level`: `low`, `medium`, `high`;
-- `collectedWeight`: суммарный вес успешно собранных signals;
-- `possibleWeight`: суммарный вес разрешенных collectors;
-- `entropy`: приблизительная оценка полезности набора signals.
+- `collectedWeight`: total weight of successfully collected signals;
+- `possibleWeight`: total weight of allowed collectors;
+- `entropy`: approximate usefulness estimate for the collected signal set.
 
 ### 5.6 Storage
 
-Хранилище выключено по умолчанию. Доступные варианты:
+Storage is disabled by default. Available options:
 
-- `storage: false`: только stateless fingerprint;
-- `storage: 'local'`: `localStorage` в браузере;
-- custom storage с методами `get(key)` и `set(key, value)`.
+- `storage: false`: stateless fingerprint only;
+- `storage: 'local'`: browser `localStorage`;
+- custom storage with `get(key)` and `set(key, value)` methods.
 
-Storage хранит только служебное состояние визитов в namespace проекта: `firstSeenAt`, `lastSeenAt`, `seenCount`, `visitorId`.
+Storage keeps only project-namespaced visit state: `firstSeenAt`, `lastSeenAt`, `seenCount`, and `visitorId`.
 
 ## 6. Built-in Collectors
 
-Минимальный набор:
+Minimum set:
 
 - `runtime.browser`: user agent, platform, vendor, UA Client Hints basic data;
-- `runtime.node`: Node version/platform/arch для server/test runtime;
+- `runtime.node`: Node version/platform/arch for server and test runtimes;
 - `locale`: language, languages, Intl locale;
 - `timezone`: timezone, timezone offset;
 - `screen.metrics`: screen size, color depth, DPR;
@@ -164,7 +168,7 @@ Storage хранит только служебное состояние визи
 
 ## 7. Public Result Shape
 
-`identify()` возвращает:
+`identify()` returns:
 
 ```js
 {
@@ -191,28 +195,35 @@ Storage хранит только служебное состояние визи
 
 ## 8. Quality Bar
 
-Готовая реализация должна проходить:
+The implementation must pass:
 
-- `npm run build`;
-- `npm test`;
+- `npm run build` using esbuild;
+- `npm run typecheck` for package declarations;
+- `npm test` for Node unit tests;
+- `npm run test:coverage` with 100% line, branch, and function thresholds for `src/**/*.js`;
+- `npm run test:browser` for Chromium, Firefox, and WebKit;
+- `npm run check:size` for the minified browser bundle budget;
 - `npm run verify`.
 
-Тесты должны покрывать:
+Tests must cover:
 
 - canonical normalization;
 - deterministic hashing;
 - policy filtering;
 - consent gate;
-- deterministic visitor ID на custom collectors;
+- deterministic visitor IDs for custom collectors;
 - redaction mode;
-- storage state update.
+- storage state updates;
+- built-in collector happy paths and failure paths;
+- browser bundle global API smoke tests;
+- package self-reference imports and subpath imports.
 
-## 9. Roadmap после MVP
+## 9. Post-MVP Roadmap
 
 - Subpath modules: `@fingerprint-framework/core/collectors`, `.../storage`, `.../policy`.
-- Отдельный risk engine поверх signals.
+- Dedicated risk engine over collected signals.
 - Async plugin registry.
-- Пакет preset collectors для fraud/risk scoring.
-- Browser automation test matrix через Playwright.
-- Размерные бюджеты bundle size.
-- Public compatibility contract и semver policy.
+- Preset collector package for fraud and risk scoring.
+- Browser automation test matrix through Playwright.
+- Bundle size budgets.
+- Public compatibility contract and semver policy.
