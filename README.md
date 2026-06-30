@@ -1,5 +1,6 @@
 # FingerprintJS by BotBlocker
 
+[![npm](https://img.shields.io/npm/v/@globus.studio/fingerprintjs)](https://www.npmjs.com/package/@globus.studio/fingerprintjs)
 [![Build](https://img.shields.io/badge/build-verified-brightgreen)](.github/workflows/ci.yml)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](package.json)
 [![Browser Bundle](https://img.shields.io/badge/browser%20bundle-%3C65KB-blue)](scripts/check-size.mjs)
@@ -12,6 +13,12 @@ This library powers device identification in the [BotBlocker Security plugin for
 
 The runtime has no production dependencies, performs no network calls by default, and exposes privacy-aware collector policies, deterministic identity hashing, report-only risk signals, bot evidence, private-mode indicators, confidence scoring, storage state, and compact diagnostics.
 
+## Install
+
+```bash
+npm install @globus.studio/fingerprintjs
+```
+
 ## Core Advantages
 
 - Stable visitor identity is separated from risk and diagnostic evidence. Volatile, bot, private-mode, tamper, storage, network, and capability signals can enrich reports without changing the default `visitorId`.
@@ -21,7 +28,7 @@ The runtime has no production dependencies, performs no network calls by default
 - The SDK is self-hostable, dependency-free at runtime, works through ESM, CommonJS, and a direct script tag, and performs no network calls unless the host application sends results to its own backend.
 - Output formats cover product integration, backend scoring, and debugging: compact report, dense ID analysis report, full raw report, and standalone JSON inspector.
 
-## Install And Build
+## Build (for contributors)
 
 ```bash
 npm ci
