@@ -7,14 +7,14 @@ import { resolve } from 'node:path';
 test('package exports are importable from Node after build', {
   skip: existsSync(resolve('dist/index.mjs')) && existsSync(resolve('dist/server.mjs')) ? false : 'run npm run build before package export smoke test'
 }, async () => {
-  const core = await import('@botblocker/fingerprintjs');
-  const collectors = await import('@botblocker/fingerprintjs/collectors');
-  const policy = await import('@botblocker/fingerprintjs/policy');
-  const server = await import('@botblocker/fingerprintjs/server');
-  const storage = await import('@botblocker/fingerprintjs/storage');
+  const core = await import('@globus.studio/fingerprintjs');
+  const collectors = await import('@globus.studio/fingerprintjs/collectors');
+  const policy = await import('@globus.studio/fingerprintjs/policy');
+  const server = await import('@globus.studio/fingerprintjs/server');
+  const storage = await import('@globus.studio/fingerprintjs/storage');
   const require = createRequire(import.meta.url);
-  const cjs = require('@botblocker/fingerprintjs');
-  const cjsServer = require('@botblocker/fingerprintjs/server');
+  const cjs = require('@globus.studio/fingerprintjs');
+  const cjsServer = require('@globus.studio/fingerprintjs/server');
 
   assert.equal(typeof core.createClient, 'function');
   assert.equal(typeof cjs.createClient, 'function');

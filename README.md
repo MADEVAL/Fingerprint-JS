@@ -15,7 +15,7 @@ The runtime has no production dependencies, performs no network calls by default
 ## Core Advantages
 
 - Stable visitor identity is separated from risk and diagnostic evidence. Volatile, bot, private-mode, tamper, storage, network, and capability signals can enrich reports without changing the default `visitorId`.
-- Backend verification is included through `@botblocker/fingerprintjs/server`: replay protection, client hash recomputation, server-only hashing, explainable backend reports, and pluggable network risk checks.
+- Backend verification is included through `@globus.studio/fingerprintjs/server`: replay protection, client hash recomputation, server-only hashing, explainable backend reports, and pluggable network risk checks.
 - Tamper, bot, and private-mode evidence is returned as scored, explainable signals instead of a single opaque identifier.
 - Use-case presets provide practical defaults for privacy-first analytics, login risk, checkout risk, bot defense, and fraud defense.
 - The SDK is self-hostable, dependency-free at runtime, works through ESM, CommonJS, and a direct script tag, and performs no network calls unless the host application sends results to its own backend.
@@ -35,18 +35,18 @@ Generated browser builds:
 
 Package entry points:
 
-- `@botblocker/fingerprintjs`
-- `@botblocker/fingerprintjs/collectors`
-- `@botblocker/fingerprintjs/policy`
-- `@botblocker/fingerprintjs/server`
-- `@botblocker/fingerprintjs/storage`
+- `@globus.studio/fingerprintjs`
+- `@globus.studio/fingerprintjs/collectors`
+- `@globus.studio/fingerprintjs/policy`
+- `@globus.studio/fingerprintjs/server`
+- `@globus.studio/fingerprintjs/storage`
 
 Each package entry supports ESM `import` and CommonJS `require`. Browser builds expose the `FingerprintJSBotBlocker` global.
 
 ## ESM Usage
 
 ```js
-import { createAnalysisReport, hashComponents, loadClient } from '@botblocker/fingerprintjs';
+import { createAnalysisReport, hashComponents, loadClient } from '@globus.studio/fingerprintjs';
 
 const client = await loadClient({
   namespace: 'my-product',
@@ -80,7 +80,7 @@ console.log({
 ## CommonJS Usage
 
 ```js
-const { createClient } = require('@botblocker/fingerprintjs');
+const { createClient } = require('@globus.studio/fingerprintjs');
 
 const client = createClient({
   namespace: 'node-service',
@@ -98,7 +98,7 @@ import {
   createMemoryReplayStore,
   createReplayToken,
   verifyFingerprintResult
-} from '@botblocker/fingerprintjs/server';
+} from '@globus.studio/fingerprintjs/server';
 
 const replayStore = createMemoryReplayStore();
 const replayToken = await createReplayToken({

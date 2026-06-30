@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-Security fixes are provided for the latest published minor version of `@botblocker/fingerprintjs`.
+Security fixes are provided for the latest published minor version of `@globus.studio/fingerprintjs`.
 
 ## Reporting A Vulnerability
 

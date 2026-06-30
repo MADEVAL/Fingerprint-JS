@@ -1,8 +1,8 @@
-import { componentsToDebugString, createAnalysisReport, createApiFeaturesCollector, createBotDetectionCollector, createClient, createCollector, createCssFeaturesCollector, createExplainableReport, createNetworkConnectionCollector, createPerformanceMemoryCollector, createPrivacyModeCollector, createStabilityMonitor, createTamperEvidenceCollector, createUseCasePreset, createWebglPrecisionCollector, hashComponents, listUseCasePresets, loadClient, type IdentifyResult } from '@botblocker/fingerprintjs';
-import { createBrowserCollectorPack, createDefaultCollectors, createNavigatorPropertiesCollector } from '@botblocker/fingerprintjs/collectors';
-import { createPolicy } from '@botblocker/fingerprintjs/policy';
-import { createMemoryReplayStore, createReplayToken, createServerHash, createStaticNetworkAdapter, evaluateNetworkRisk, verifyFingerprintResult } from '@botblocker/fingerprintjs/server';
-import { createMemoryStorage } from '@botblocker/fingerprintjs/storage';
+import { componentsToDebugString, createAnalysisReport, createApiFeaturesCollector, createBotDetectionCollector, createClient, createCollector, createCssFeaturesCollector, createExplainableReport, createNetworkConnectionCollector, createPerformanceMemoryCollector, createPrivacyModeCollector, createStabilityMonitor, createTamperEvidenceCollector, createUseCasePreset, createWebglPrecisionCollector, hashComponents, listUseCasePresets, loadClient, type IdentifyResult } from '@globus.studio/fingerprintjs';
+import { createBrowserCollectorPack, createDefaultCollectors, createNavigatorPropertiesCollector } from '@globus.studio/fingerprintjs/collectors';
+import { createPolicy } from '@globus.studio/fingerprintjs/policy';
+import { createMemoryReplayStore, createReplayToken, createServerHash, createStaticNetworkAdapter, evaluateNetworkRisk, verifyFingerprintResult } from '@globus.studio/fingerprintjs/server';
+import { createMemoryStorage } from '@globus.studio/fingerprintjs/storage';
 
 const collector = createCollector({
   id: 'types.signal',
