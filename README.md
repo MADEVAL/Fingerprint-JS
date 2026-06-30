@@ -30,8 +30,13 @@ npm install @globus.studio/fingerprintjs
 
 ## Build (for contributors)
 
+Requires **Node.js >= 18**.
+
 ```bash
+git clone https://github.com/MADEVAL/Fingerprint-JS.git
+cd Fingerprint-JS
 npm ci
+npx playwright install --with-deps chromium firefox webkit
 npm run verify
 ```
 
@@ -42,13 +47,14 @@ Generated browser builds:
 
 Package entry points:
 
-- `@globus.studio/fingerprintjs`
-- `@globus.studio/fingerprintjs/collectors`
-- `@globus.studio/fingerprintjs/policy`
-- `@globus.studio/fingerprintjs/server`
-- `@globus.studio/fingerprintjs/storage`
+- `@globus.studio/fingerprintjs` — main client API
+- `@globus.studio/fingerprintjs/collectors` — collector creators and defaults
+- `@globus.studio/fingerprintjs/policy` — permission and privacy policy engine
+- `@globus.studio/fingerprintjs/server` — backend verification and replay protection
+- `@globus.studio/fingerprintjs/storage` — in-memory and localStorage adapters
+- `@globus.studio/fingerprintjs/browser` / `./browser.min` — IIFE bundles for script-tag usage
 
-Each package entry supports ESM `import` and CommonJS `require`. Browser builds expose the `FingerprintJSBotBlocker` global.
+Each package entry supports ESM `import` and CommonJS `require`. Browser builds expose the `FingerprintJSBotBlocker` global. TypeScript declarations are included for all entry points.
 
 ## ESM Usage
 
@@ -128,8 +134,10 @@ if (!verification.ok || verification.network?.verdict === 'high_risk_network') {
 
 ## Script-Tag Usage
 
+Copy the browser bundle to your public directory, or serve it directly from `node_modules`:
+
 ```html
-<script src="./dist/browser/fingerprintjs-botblocker.min.js"></script>
+<script src="./fingerprintjs-botblocker.min.js"></script>
 <script>
   const client = FingerprintJSBotBlocker.createClient({
     namespace: location.hostname || 'botblocker-demo',
