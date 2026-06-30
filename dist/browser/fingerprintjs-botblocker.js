@@ -1,4 +1,4 @@
-/* FingerprintJS by BotBlocker v0.1.0 | MIT | https://botblocker.top */
+/* FingerprintJS by BotBlocker v0.1.1 | MIT | https://botblocker.top */
 "use strict";
 var FingerprintJSBotBlocker = (() => {
   var __create = Object.create;
@@ -109,7 +109,7 @@ var FingerprintJSBotBlocker = (() => {
   }
 
   // src/constants.js
-  var VERSION = "0.1.0";
+  var VERSION = "0.1.1";
   var SCHEMA_VERSION = "bbid-v2";
   var DEFAULT_COLLECTOR_TIMEOUT_MS = 700;
   var DEFAULT_LOAD_DELAY_MS = 50;
@@ -205,6 +205,17 @@ var FingerprintJSBotBlocker = (() => {
     const windowRef = getWindowRef(context);
     return typeof windowRef.matchMedia === "function" ? windowRef.matchMedia.bind(windowRef) : null;
   }
+  function createCheck(name, matched, weight, detail) {
+    return {
+      name,
+      matched: Boolean(matched),
+      weight,
+      detail
+    };
+  }
+  function roundScore(value) {
+    return Math.round(Math.min(1, value) * 1e3) / 1e3;
+  }
 
   // src/collectors/bot-detection.js
   var AUTOMATION_GLOBALS = Object.freeze([
@@ -282,14 +293,6 @@ var FingerprintJSBotBlocker = (() => {
       checks
     };
   }
-  function createCheck(name, matched, weight, detail) {
-    return {
-      name,
-      matched: Boolean(matched),
-      weight,
-      detail
-    };
-  }
   function normalizeLanguages(languages) {
     return Array.isArray(languages) ? languages.filter((language) => typeof language === "string" && language.length > 0) : [];
   }
@@ -310,9 +313,6 @@ var FingerprintJSBotBlocker = (() => {
   }
   function isChromeLike(userAgent) {
     return /Chrome|Chromium|CriOS|Edg/u.test(userAgent) && !/Firefox|FxiOS/u.test(userAgent);
-  }
-  function roundScore(value) {
-    return Math.round(Math.min(1, value) * 1e3) / 1e3;
   }
   function detectLanguageIssues(language, languages) {
     const issues = [];
@@ -702,9 +702,9 @@ var FingerprintJSBotBlocker = (() => {
     const uaData = navigatorRef && navigatorRef.userAgentData ? navigatorRef.userAgentData : null;
     const uaPlatform = String(uaData && uaData.platform || "");
     const brandNames = normalizeBrandNames(uaData && uaData.brands);
-    const screenWidth = safeNumber2(screenRef && screenRef.width);
-    const screenHeight = safeNumber2(screenRef && screenRef.height);
-    const hardwareConcurrency = safeNumber2(navigatorRef && navigatorRef.hardwareConcurrency);
+    const screenWidth = safeNumber(screenRef && screenRef.width);
+    const screenHeight = safeNumber(screenRef && screenRef.height);
+    const hardwareConcurrency = safeNumber(navigatorRef && navigatorRef.hardwareConcurrency);
     const firefoxMatch = /Firefox\/(\d+)/u.exec(userAgent);
     const firefoxIosMatch = /FxiOS\/(\d+)/u.exec(userAgent);
     const safariMatch = /Version\/(\d+)/u.exec(userAgent);
@@ -741,7 +741,7 @@ var FingerprintJSBotBlocker = (() => {
     const isChromium = (chromiumFromBrand || chromiumFromUa || chromiumFeature) && !isFirefox;
     const isSafari = /Safari\//u.test(userAgent) && !isChromium && !/FxiOS\/|OPR\/|SamsungBrowser\//u.test(userAgent);
     const isWebKit = /AppleWebKit\//u.test(userAgent) || webKitFeature;
-    const isIPad = platform === "iPad" || /iPad/u.test(userAgent) || platform === "MacIntel" && safeNumber2(navigatorRef && navigatorRef.maxTouchPoints) > 1;
+    const isIPad = platform === "iPad" || /iPad/u.test(userAgent) || platform === "MacIntel" && safeNumber(navigatorRef && navigatorRef.maxTouchPoints) > 1;
     const isIos = /iPad|iPhone|iPod/u.test(platform) || /iPad|iPhone|iPod/u.test(userAgent) || isIPad;
     const isAndroid = /Android/u.test(userAgent) || uaPlatform === "Android";
     const safariMajor = safariMatch ? Number(safariMatch[1]) : null;
@@ -760,7 +760,7 @@ var FingerprintJSBotBlocker = (() => {
       isFirefoxResistFingerprintingLikely: Boolean(isFirefox && hardwareConcurrency === 2 && screenWidth === 1e3 && screenHeight === 1e3),
       isIos,
       isIPad,
-      isIosDesktopMode: Boolean(platform === "MacIntel" && safeNumber2(navigatorRef && navigatorRef.maxTouchPoints) > 1),
+      isIosDesktopMode: Boolean(platform === "MacIntel" && safeNumber(navigatorRef && navigatorRef.maxTouchPoints) > 1),
       isOldMobileSafari: Boolean(isIos && isSafari && safariMajor !== null && safariMajor <= 11),
       isSafari,
       isDesktopSafari: Boolean(isSafari && !isIos),
@@ -817,7 +817,7 @@ var FingerprintJSBotBlocker = (() => {
     }
   }
   function normalizeHardwareConcurrency(value, quirks) {
-    const concurrency = safeNumber2(value);
+    const concurrency = safeNumber(value);
     if (concurrency === null) {
       return null;
     }
@@ -831,9 +831,6 @@ var FingerprintJSBotBlocker = (() => {
       return [];
     }
     return brands.map((brand) => String(brand && brand.brand ? brand.brand : "")).filter(Boolean);
-  }
-  function safeNumber2(value) {
-    return Number.isFinite(value) ? Number(value) : null;
   }
   function countTruthy(values) {
     return values.filter(Boolean).length;
@@ -1420,22 +1417,19 @@ var FingerprintJSBotBlocker = (() => {
         return null;
       }
       return {
-        alpha: safeBoolean2(attributes.alpha),
-        antialias: safeBoolean2(attributes.antialias),
-        depth: safeBoolean2(attributes.depth),
-        desynchronized: safeBoolean2(attributes.desynchronized),
-        failIfMajorPerformanceCaveat: safeBoolean2(attributes.failIfMajorPerformanceCaveat),
+        alpha: safeBoolean(attributes.alpha),
+        antialias: safeBoolean(attributes.antialias),
+        depth: safeBoolean(attributes.depth),
+        desynchronized: safeBoolean(attributes.desynchronized),
+        failIfMajorPerformanceCaveat: safeBoolean(attributes.failIfMajorPerformanceCaveat),
         powerPreference: typeof attributes.powerPreference === "string" ? attributes.powerPreference : null,
-        premultipliedAlpha: safeBoolean2(attributes.premultipliedAlpha),
-        preserveDrawingBuffer: safeBoolean2(attributes.preserveDrawingBuffer),
-        stencil: safeBoolean2(attributes.stencil)
+        premultipliedAlpha: safeBoolean(attributes.premultipliedAlpha),
+        preserveDrawingBuffer: safeBoolean(attributes.preserveDrawingBuffer),
+        stencil: safeBoolean(attributes.stencil)
       };
     } catch (_error) {
       return null;
     }
-  }
-  function safeBoolean2(value) {
-    return typeof value === "boolean" ? value : null;
   }
   function getGlParameter(gl, parameter) {
     try {
@@ -2044,11 +2038,11 @@ var FingerprintJSBotBlocker = (() => {
         const checks = [
           localStorage,
           sessionStorage,
-          createCheck2("indexedDB.blocked", indexedDB.blocked, 0.25, indexedDB.detail),
-          createCheck2("storage.lowQuota", estimate.lowQuota, 0.2, estimate.detail),
-          createCheck2("storage.notPersisted", persisted.notPersisted, 0.05, persisted.detail)
+          createCheck("indexedDB.blocked", indexedDB.blocked, 0.25, indexedDB.detail),
+          createCheck("storage.lowQuota", estimate.lowQuota, 0.2, estimate.detail),
+          createCheck("storage.notPersisted", persisted.notPersisted, 0.05, persisted.detail)
         ];
-        const score = roundScore2(checks.reduce((total, check) => total + (check.matched ? check.weight : 0), 0));
+        const score = roundScore(checks.reduce((total, check) => total + (check.matched ? check.weight : 0), 0));
         const evidence = checks.filter((check) => check.matched).map((check) => check.name);
         return createResult(
           score >= 0.5 ? "likely_private" : score >= 0.25 ? "possible_private" : "no_private_evidence",
@@ -2074,7 +2068,7 @@ var FingerprintJSBotBlocker = (() => {
     return Boolean(!documentRef && globalRef && globalRef.process && globalRef.process.versions && globalRef.process.versions.node);
   }
   function probeWebStorage(globalRef, key, weight) {
-    return createCheck2(`${key}.blocked`, !canUseStorage(globalRef, key), weight, null);
+    return createCheck(`${key}.blocked`, !canUseStorage(globalRef, key), weight, null);
   }
   function probeIndexedDb(globalRef) {
     const indexedDB = globalRef && globalRef.indexedDB;
@@ -2133,14 +2127,6 @@ var FingerprintJSBotBlocker = (() => {
       return { notPersisted: false, detail: "unavailable" };
     }
   }
-  function createCheck2(name, matched, weight, detail) {
-    return {
-      name,
-      matched: Boolean(matched),
-      weight,
-      detail
-    };
-  }
   function closeDatabase(database) {
     if (database && typeof database.close === "function") {
       database.close();
@@ -2150,9 +2136,6 @@ var FingerprintJSBotBlocker = (() => {
     if (typeof indexedDB.deleteDatabase === "function") {
       indexedDB.deleteDatabase("__fingerprint_framework_privacy_probe__");
     }
-  }
-  function roundScore2(value) {
-    return Math.round(Math.min(1, value) * 1e3) / 1e3;
   }
 
   // src/collectors/runtime.js

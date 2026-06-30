@@ -1,6 +1,6 @@
 {
   "name": "@botblocker/fingerprintjs",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "FingerprintJS by BotBlocker: consent-aware browser fingerprinting, bot evidence, and device intelligence for BotBlocker Security integrations.",
   "productName": "FingerprintJS by BotBlocker",
   "type": "module",

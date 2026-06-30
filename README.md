@@ -8,6 +8,8 @@
 
 FingerprintJS by BotBlocker is a browser fingerprinting and device intelligence SDK for risk, fraud, and bot-defense workflows. It is designed to pair with [BotBlocker Security](https://botblocker.top) while remaining usable as a standalone ESM package or a direct script-tag bundle.
 
+This library powers device identification in the [BotBlocker Security plugin for WordPress](https://wordpress.org/plugins/botblocker-security) — a comprehensive protection suite for WordPress sites.
+
 The runtime has no production dependencies, performs no network calls by default, and exposes privacy-aware collector policies, deterministic identity hashing, report-only risk signals, bot evidence, private-mode indicators, confidence scoring, storage state, and compact diagnostics.
 
 ## Core Advantages

@@ -1,6 +1,6 @@
 import { detectBrowserQuirks, getSuppressionReason, shouldSuppressSignal } from '../browser-quirks.js';
 import { createCollector } from './core.js';
-import { checksumString, safeNumber } from './shared.js';
+import { checksumString, safeBoolean, safeNumber } from './shared.js';
 
 const NOISY_WEBGL_EXTENSIONS = Object.freeze([
   'EXT_disjoint_timer_query',
@@ -159,10 +159,6 @@ function readContextAttributes(gl) {
   } catch (_error) {
     return null;
   }
-}
-
-function safeBoolean(value) {
-  return typeof value === 'boolean' ? value : null;
 }
 
 function getGlParameter(gl, parameter) {

@@ -52,3 +52,16 @@ export function getMatchMedia(context) {
   const windowRef = getWindowRef(context);
   return typeof windowRef.matchMedia === 'function' ? windowRef.matchMedia.bind(windowRef) : null;
 }
+
+export function createCheck(name, matched, weight, detail) {
+  return {
+    name,
+    matched: Boolean(matched),
+    weight,
+    detail
+  };
+}
+
+export function roundScore(value) {
+  return Math.round(Math.min(1, value) * 1000) / 1000;
+}

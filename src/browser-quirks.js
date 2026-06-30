@@ -1,3 +1,5 @@
+import { safeNumber } from './collectors/shared.js';
+
 export function detectBrowserQuirks(context = {}) {
   const navigatorRef = context.navigator || null;
   const windowRef = context.window || context.global || {};
@@ -155,10 +157,6 @@ function normalizeBrandNames(brands) {
   }
 
   return brands.map((brand) => String(brand && brand.brand ? brand.brand : '')).filter(Boolean);
-}
-
-function safeNumber(value) {
-  return Number.isFinite(value) ? Number(value) : null;
 }
 
 function countTruthy(values) {

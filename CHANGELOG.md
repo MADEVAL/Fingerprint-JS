@@ -2,6 +2,21 @@
 
 All notable changes to FingerprintJS by BotBlocker are documented here.
 
+## 0.1.1 - 2026-07-01
+
+### Changed
+
+- Сonsolidated duplicate utility functions (`safeNumber`, `safeBoolean`, `createCheck`, `roundScore`) into `collectors/shared.js`.
+- Added `.gitattributes` to enforce LF line endings across all platforms.
+
+### Removed
+
+- Removed `alien/` directory — legacy detection scripts superseded by the collector architecture.
+
+### Fixed
+
+- `graphics.js` now imports `safeBoolean` from `shared.js` instead of redefining it locally.
+
 ## 0.1.0 - 2026-05-14
 
 ### Added

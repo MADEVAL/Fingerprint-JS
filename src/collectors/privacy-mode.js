@@ -1,6 +1,6 @@
 import { createCollector } from './core.js';
 import { canUseStorage } from '../storage.js';
-import { safeNumber } from './shared.js';
+import { createCheck, roundScore, safeNumber } from './shared.js';
 
 const LOW_QUOTA_BYTES = 120 * 1024 * 1024;
 
@@ -133,15 +133,6 @@ async function probePersistedStorage(storageRef) {
   }
 }
 
-function createCheck(name, matched, weight, detail) {
-  return {
-    name,
-    matched: Boolean(matched),
-    weight,
-    detail
-  };
-}
-
 function closeDatabase(database) {
   if (database && typeof database.close === 'function') {
     database.close();
@@ -154,6 +145,3 @@ function deleteDatabase(indexedDB) {
   }
 }
 
-function roundScore(value) {
-  return Math.round(Math.min(1, value) * 1000) / 1000;
-}

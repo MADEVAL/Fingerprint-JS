@@ -1,5 +1,5 @@
 import { createCollector } from './core.js';
-import { getWindowRef, safeNumber, safeString, toArrayLike } from './shared.js';
+import { createCheck, getWindowRef, roundScore, safeNumber, safeString, toArrayLike } from './shared.js';
 
 const AUTOMATION_GLOBALS = Object.freeze([
   '__driver_evaluate',
@@ -82,15 +82,6 @@ function createAssessment(verdict, score, evidence, checks) {
   };
 }
 
-function createCheck(name, matched, weight, detail) {
-  return {
-    name,
-    matched: Boolean(matched),
-    weight,
-    detail
-  };
-}
-
 function normalizeLanguages(languages) {
   return Array.isArray(languages) ? languages.filter((language) => typeof language === 'string' && language.length > 0) : [];
 }
@@ -114,10 +105,6 @@ function readWindowSize(windowRef) {
 
 function isChromeLike(userAgent) {
   return /Chrome|Chromium|CriOS|Edg/u.test(userAgent) && !/Firefox|FxiOS/u.test(userAgent);
-}
-
-function roundScore(value) {
-  return Math.round(Math.min(1, value) * 1000) / 1000;
 }
 
 function detectLanguageIssues(language, languages) {
