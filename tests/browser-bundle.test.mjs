@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import vm from 'node:vm';
 
-const bundlePath = resolve('dist/browser/fingerprintjs-botblocker.js');
+const bundlePath = resolve('dist/browser/fingerprintjs.js');
 
 test('browser bundle exposes global API and identifies in a restricted VM context', {
   skip: existsSync(bundlePath) ? false : 'run npm run build before bundle smoke test'

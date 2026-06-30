@@ -16,8 +16,8 @@ The SDK can run as an ESM package or as a standalone browser script. It does not
 - `dist/server.cjs`: CommonJS backend verification subpath.
 - `dist/storage.mjs`: storage subpath.
 - `dist/storage.cjs`: CommonJS storage subpath.
-- `dist/browser/fingerprintjs-botblocker.js`: readable browser global build.
-- `dist/browser/fingerprintjs-botblocker.min.js`: minified script-tag build.
+- `dist/browser/fingerprintjs.js`: readable browser global build.
+- `dist/browser/fingerprintjs.min.js`: minified script-tag build.
 - `dist/*.d.ts`: TypeScript declarations for public package entry points.
 
 ## Runtime Model

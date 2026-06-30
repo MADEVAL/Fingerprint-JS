@@ -4,8 +4,8 @@ import { build } from 'esbuild';
 
 const root = process.cwd();
 const distPath = resolve(root, 'dist');
-const browserPath = resolve(distPath, 'browser/fingerprintjs-botblocker.js');
-const minPath = resolve(distPath, 'browser/fingerprintjs-botblocker.min.js');
+const browserPath = resolve(distPath, 'browser/fingerprintjs.js');
+const minPath = resolve(distPath, 'browser/fingerprintjs.min.js');
 const banner = '/* FingerprintJS by BotBlocker v0.1.1 | MIT | https://botblocker.top */';
 
 await rm(distPath, { recursive: true, force: true });

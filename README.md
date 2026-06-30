@@ -42,8 +42,8 @@ npm run verify
 
 Generated browser builds:
 
-- `dist/browser/fingerprintjs-botblocker.js`
-- `dist/browser/fingerprintjs-botblocker.min.js`
+- `dist/browser/fingerprintjs.js`
+- `dist/browser/fingerprintjs.min.js`
 
 Package entry points:
 
@@ -134,10 +134,17 @@ if (!verification.ok || verification.network?.verdict === 'high_risk_network') {
 
 ## Script-Tag Usage
 
-Copy the browser bundle to your public directory, or serve it directly from `node_modules`:
+Copy the browser bundle from `dist/browser/fingerprintjs.min.js` to your public directory, or load directly from a CDN:
 
 ```html
-<script src="./fingerprintjs-botblocker.min.js"></script>
+<!-- unpkg -->
+<script src="https://unpkg.com/@globus.studio/fingerprintjs/dist/browser/fingerprintjs.min.js"></script>
+
+<!-- jsdelivr -->
+<script src="https://cdn.jsdelivr.net/npm/@globus.studio/fingerprintjs/dist/browser/fingerprintjs.min.js"></script>
+```
+
+```html
 <script>
   const client = FingerprintJSBotBlocker.createClient({
     namespace: location.hostname || 'botblocker-demo',

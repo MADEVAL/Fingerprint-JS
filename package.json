@@ -15,8 +15,8 @@
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs"
     },
-    "./browser": "./dist/browser/fingerprintjs-botblocker.js",
-    "./browser.min": "./dist/browser/fingerprintjs-botblocker.min.js",
+    "./browser": "./dist/browser/fingerprintjs.js",
+    "./browser.min": "./dist/browser/fingerprintjs.min.js",
     "./collectors": {
       "types": "./dist/collectors.d.ts",
       "import": "./dist/collectors.mjs",
