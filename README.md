@@ -234,3 +234,9 @@ Additional docs:
 - [docs/VERSION_POLICY.md](docs/VERSION_POLICY.md)
 - [docs/AUDIT_REPORT.md](docs/AUDIT_REPORT.md)
 - [docs/PUBLISHING.md](docs/PUBLISHING.md)
+
+---
+
+## License
+
+MIT. See [LICENSE](LICENSE).
