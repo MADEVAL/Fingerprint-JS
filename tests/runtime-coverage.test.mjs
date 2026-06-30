@@ -15,7 +15,7 @@ import { createRuntimeContext, hasConsent, waitForRuntimeIdle } from '../src/run
 import { createMemoryStorage } from '../src/storage-public.js';
 
 test('exports stable metadata and collector packs', () => {
-  assert.equal(VERSION, '0.1.1');
+  assert.equal(VERSION, '0.2.0');
   assert.equal(PROFILE_PRESETS.strict.maxSensitivity, 'low');
 
   const defaultIds = createDefaultCollectors().map((collector) => collector.id);

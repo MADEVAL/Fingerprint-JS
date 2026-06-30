@@ -1,4 +1,4 @@
-/* FingerprintJS by BotBlocker v0.1.1 | MIT | https://botblocker.top */
+/* FingerprintJS by BotBlocker v0.2.0 | MIT | https://botblocker.top */
 
 // src/canonical.js
 function canonicalStringify(value) {

@@ -1,4 +1,4 @@
-/* FingerprintJS by BotBlocker v0.1.1 | MIT | https://botblocker.top */
+/* FingerprintJS by BotBlocker v0.2.0 | MIT | https://botblocker.top */
 
 // src/canonical.js
 function canonicalStringify(value) {
@@ -41,7 +41,7 @@ function toCanonical(value) {
 }
 
 // src/constants.js
-var VERSION = "0.1.1";
+var VERSION = "0.2.0";
 var SCHEMA_VERSION = "bbid-v2";
 var DEFAULT_COLLECTOR_TIMEOUT_MS = 700;
 var DEFAULT_LOAD_DELAY_MS = 50;

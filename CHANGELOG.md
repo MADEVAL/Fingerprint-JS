@@ -2,6 +2,28 @@
 
 All notable changes to FingerprintJS by BotBlocker are documented here.
 
+## 0.2.0 - 2026-07-01
+
+### Changed
+
+- **Breaking**: browser bundle files renamed from `fingerprintjs-botblocker.js` to `fingerprintjs.js`.
+- Package scope renamed from `@botblocker` to `@globus.studio`.
+- README updated with npm badge, install section, CDN links (unpkg, jsdelivr).
+
+### Added
+
+- `.gitattributes` to enforce LF line endings.
+- `.gitignore` extended with `.env`, `.vscode/`, `.idea/`, `Thumbs.db`, `*.tsbuildinfo`.
+
+### Fixed
+
+- Consolidated duplicate utility functions (`safeNumber`, `safeBoolean`, `createCheck`, `roundScore`) into `collectors/shared.js`.
+- `graphics.js` now imports `safeBoolean` from `shared.js` instead of redefining it.
+
+### Removed
+
+- `alien/` directory — legacy detection scripts superseded by the collector architecture.
+
 ## 0.1.1 - 2026-07-01
 
 ### Changed
